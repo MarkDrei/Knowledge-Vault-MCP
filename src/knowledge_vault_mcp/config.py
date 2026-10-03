@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     vault_repo_url: str | None = None
     vault_branch: str = "main"
     vault_path: Path = Path("./data/vault")
+    vault_git_sync: bool = True  # pull --rebase before and push after each write
     inbox_dir: str = "_inbox"
     timezone: str = "Europe/Berlin"
     db_path: Path = Path("./data/index.db")

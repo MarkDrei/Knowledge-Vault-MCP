@@ -2,7 +2,7 @@
 
 A self-hosted [MCP](https://modelcontextprotocol.io) server that exposes a git-backed, Obsidian-style knowledge vault for **hybrid retrieval (RAG)** and **safe capture of new knowledge**. It runs entirely locally on a small VPS.
 
-> Status: roadmap step 1 (skeleton with OAuth) implemented. This README is the source of truth for scope; architecture and decisions are in [doc/arc42.md](doc/arc42.md) and [doc/adr/](doc/adr/).
+> Status: roadmap step 1 (skeleton with OAuth) done; a first, simplified vault tool set (keyword search, read, add/append/update) is live. Semantic search, `move_note`/`delete_note` and document extraction are still open. This README is the source of truth for scope; architecture and decisions are in [doc/arc42.md](doc/arc42.md) and [doc/adr/](doc/adr/).
 
 ## Goal
 
@@ -82,6 +82,10 @@ Embeddings are computed locally on CPU with a small **multilingual model** suite
 
 ## MCP tools (v1)
 
+**Implemented today** (`src/knowledge_vault_mcp/vault.py`): `server_info`, `search` (keyword/BM25 via in-memory SQLite FTS5, rebuilt when files change; params `query`, `limit`, `path_prefix`, `tag`), `get_note`, `list_notes`, `get_backlinks`, `add_note`, `append_note`, `update_note`. Writes follow the safety flow below and refuse to run on a dirty working tree. Set `VAULT_GIT_SYNC=false` to commit locally without pull/push. Not yet implemented: semantic/hybrid search, `move_note`, `delete_note`, date filters.
+
+Planned design:
+
 | Tool | Purpose |
 |---|---|
 | `search` | Hybrid search. Params: `query`, `limit`, optional `tags`, `path_prefix`, `status`, date filters. Returns ranked chunks with sources. |
@@ -147,7 +151,7 @@ Environment variables or a `.env` file (see [.env.example](.env.example)), no se
 - `OWNER_PASSWORD_HASH` (from `kvault hash-password`), optional `AUTH_TOKEN`
 - `STATE_DB_PATH` (OAuth state, back it up), `DB_PATH` (search index, rebuildable)
 - `VAULT_REPO_URL`, `VAULT_BRANCH`, `VAULT_PATH` (clone location), git credentials (deploy key)
-- `INBOX_DIR` (default `_inbox`), `TIMEZONE`
+- `INBOX_DIR` (default `_inbox`; `00-Inbox` for the live vault), `TIMEZONE`, `VAULT_GIT_SYNC` (default `true`)
 - `EMBEDDING_MODEL`, `SYNC_INTERVAL`
 
 ## Development
@@ -181,6 +185,7 @@ Running on the `ironstrike.de` VPS at **https://vault.ironstrike.de**, as a Dock
 - The knowledge vault repo is bind-mounted read/write from the already-cloned `~/clones/Marks-Knowledge-Vault` checkout into the container at `/data/vault`, instead of having the server clone it over the network via `VAULT_REPO_URL`.
 - OAuth state (`state.db`) and the search index (`index.db`) live in the `kvault-data` named volume.
 - To redeploy after a `git pull`: `cd /var/lib/deployments/Knowledge-Vault-MCP/main && docker compose up -d --build`.
+- Inbox folder is `00-Inbox`. Git push from the container uses a dedicated deploy key at `/var/lib/deployments/Knowledge-Vault-MCP/main/ssh/` (mounted at `/ssh`, wired via `GIT_SSH_COMMAND` in `.env`). Add `ssh/id_ed25519.pub` as a deploy key **with write access** on `MarkDrei/Marks-Knowledge-Vault`, then set `VAULT_GIT_SYNC=true` in `.env` and `docker compose up -d`. Until then writes are committed locally only (push manually from `~/clones/Marks-Knowledge-Vault`).
 - The owner password hash is set in the (git-ignored) `.env` next to that compose file; regenerate a login password with `docker compose run --rm kvault kvault hash-password`.
 
 ## Tech stack
