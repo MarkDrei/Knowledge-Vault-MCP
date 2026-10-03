@@ -1,0 +1,23 @@
+# Example deployment: Caddy terminates TLS and proxies to the server.
+# Copy to docker-compose.yml, set the domain in Caddyfile and fill .env.
+services:
+  kvault:
+    build: .
+    env_file: .env
+    environment:
+      FORWARDED_ALLOW_IPS: "*"   # only Caddy can reach this container
+    volumes:
+      - kvault-data:/data
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    restart: unless-stopped
+
+volumes:
+  kvault-data:
+  caddy-data:
