@@ -165,13 +165,23 @@ On Windows use WSL or Docker. `curl localhost:8000/healthz` should return `{"sta
 
 ### Connecting Claude
 
-1. Deploy behind TLS (see `Dockerfile`, `docker-compose.example.yml`, `Caddyfile.example`).
+1. Deploy behind TLS (see `Dockerfile`, `docker-compose.example.yml`, `Caddyfile.example`). If an external reverse proxy (e.g. a shared Traefik instance already handling TLS for other services on the VPS) is used instead, see `docker-compose.traefik.example.yml` and the "Live deployment" section below.
 2. In Claude: *Settings → Connectors → Add custom connector*, URL `https://<your-domain>/mcp`. Leave client ID/secret empty.
 3. Claude opens the `/login` page; approve with the owner password. The connector then appears in the mobile app too.
 
 ## Deployment target
 
 A single small VPS (2-4 vCPU, 4-8 GB RAM, CPU only), vault size under ~10k notes. Run as a systemd service or container behind a TLS-terminating reverse proxy. Streamable HTTP (stateless, OAuth) is the primary transport; stdio may be added for local development.
+
+### Live deployment
+
+Running on the `ironstrike.de` VPS at **https://vault.ironstrike.de**, as a Docker container attached to the shared Traefik reverse proxy (see `docker-compose.traefik.example.yml`):
+
+- Compose file rendered at `/var/lib/deployments/Knowledge-Vault-MCP/main/docker-compose.yml`.
+- The knowledge vault repo is bind-mounted read/write from the already-cloned `~/clones/Marks-Knowledge-Vault` checkout into the container at `/data/vault`, instead of having the server clone it over the network via `VAULT_REPO_URL`.
+- OAuth state (`state.db`) and the search index (`index.db`) live in the `kvault-data` named volume.
+- To redeploy after a `git pull`: `cd /var/lib/deployments/Knowledge-Vault-MCP/main && docker compose up -d --build`.
+- The owner password hash is set in the (git-ignored) `.env` next to that compose file; regenerate a login password with `docker compose run --rm kvault kvault hash-password`.
 
 ## Tech stack
 
