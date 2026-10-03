@@ -2,7 +2,7 @@
 
 A self-hosted [MCP](https://modelcontextprotocol.io) server that exposes a git-backed, Obsidian-style knowledge vault for **hybrid retrieval (RAG)** and **safe capture of new knowledge**. It runs entirely locally on a small VPS.
 
-> Status: design phase. This README is the source of truth for scope; nothing is implemented yet.
+> Status: roadmap step 1 (skeleton with OAuth) implemented. This README is the source of truth for scope; architecture and decisions are in [doc/arc42.md](doc/arc42.md) and [doc/adr/](doc/adr/).
 
 ## Goal
 
@@ -39,7 +39,7 @@ The indexer understands:
 
 ```
             MCP client (Claude, ...)
-                     |  Streamable HTTP + bearer token
+                     |  Streamable HTTP + OAuth 2.1 bearer token
               TLS reverse proxy (Caddy/nginx)
                      |
         +------------+-------------------------+
@@ -47,6 +47,7 @@ The indexer understands:
         |                                      |
         |  MCP tools: search / get_note /      |
         |             get_backlinks / write    |
+        |  OAuth server (DCR, PKCE, /login)    |
         |                                      |
         |  Indexer ---- Retriever              |
         |  (parse, chunk, embed)  (BM25+vec)   |
@@ -71,7 +72,7 @@ A single SQLite database: FTS5 for BM25 keyword search, `sqlite-vec` for vector 
 3. Optional filters: path prefix, tags, frontmatter fields (e.g. `status`), date range.
 4. Each hit returns path, heading path, score, snippet, and note metadata.
 
-Embeddings are computed locally on CPU with a small **multilingual model** suited to German and English (candidate class: multilingual-e5-small or bge-m3 class; final choice to be benchmarked on a real German/English sample). No network calls at query or index time.
+Embeddings are computed locally on CPU with a small **multilingual model** suited to German and English. Default: `intfloat/multilingual-e5-small` (384 dims, see [ADR-0004](doc/adr/0004-embedding-model-multilingual-e5-small.md)); to be confirmed by a benchmark on a real German/English sample. No network calls at query or index time.
 
 ### Sync and indexing
 
@@ -87,7 +88,7 @@ Embeddings are computed locally on CPU with a small **multilingual model** suite
 | `get_note` | Return a note's full content and metadata by path. |
 | `get_backlinks` | Return notes that link to a given note, with link context. |
 | `add_note` | Capture new knowledge into the inbox (see below). Commits and pushes. |
-| `update_note` / `append_note` / `move_note` / `delete_note` | Edit existing notes. Each is one commit, then push. |
+| `update_note` / `append_note` / `move_note` / `delete_note` | Edit any existing note in the vault. Each is one commit, then push. `move_note` rewrites wikilinks in linking notes in the same commit. |
 
 ### Capturing new knowledge (inbox)
 
@@ -122,24 +123,55 @@ tags: []
 
 ### Write safety
 
+- All git operations (periodic sync and writes) are serialized by one in-process lock.
 - Before every write the server runs `git pull --rebase`.
-- Write, commit (clear, machine-generated message), push.
-- **Any conflict aborts the operation and returns an error** to the client. Nothing is auto-resolved.
-- No locking: the design assumes a single writer per vault.
+- Write, commit (clear, machine-generated message), push, then reindex the touched files immediately.
+- **Any conflict or failed push aborts the operation**, resets the local branch to its previous state and returns an error to the client. Nothing is auto-resolved.
+- The design assumes a single server instance per vault (see [ADR-0006](doc/adr/0006-git-write-flow.md)).
 
-## Configuration (planned)
+## Authentication
 
-Environment/config file, no secrets in the repo:
+The server is its own OAuth 2.1 authorization server, so it can be added as a **custom connector** in Claude (mobile, web, desktop) and in Claude Code ([ADR-0005](doc/adr/0005-built-in-oauth-server.md)):
 
+- Discovery via `401` + `WWW-Authenticate: resource_metadata=...`, RFC 9728 and RFC 8414 metadata.
+- Dynamic Client Registration, limited to allow-listed redirect URIs (`https://claude.ai/api/mcp/auth_callback`) and loopback URIs.
+- Authorization code + PKCE S256. Approval happens on a `/login` page with the owner password.
+- Access tokens 1 h, rotating refresh tokens 30 days, all stored hashed in `state.db`.
+- Optional static `AUTH_TOKEN` for scripts and tests.
+
+## Configuration
+
+Environment variables or a `.env` file (see [.env.example](.env.example)), no secrets in the repo:
+
+- `PUBLIC_URL` (external base URL; MCP endpoint is `PUBLIC_URL/mcp`), `HOST`, `PORT`, `FORWARDED_ALLOW_IPS`
+- `OWNER_PASSWORD_HASH` (from `kvault hash-password`), optional `AUTH_TOKEN`
+- `STATE_DB_PATH` (OAuth state, back it up), `DB_PATH` (search index, rebuildable)
 - `VAULT_REPO_URL`, `VAULT_BRANCH`, `VAULT_PATH` (clone location), git credentials (deploy key)
 - `INBOX_DIR` (default `_inbox`), `TIMEZONE`
-- `AUTH_TOKEN` (bearer token for the HTTP transport)
 - `EMBEDDING_MODEL`, `SYNC_INTERVAL`
-- `DB_PATH` (SQLite file)
+
+## Development
+
+```bash
+uv sync                     # Python 3.12+, installs dev tools too
+uv run pytest               # tests, including the full OAuth flow
+uv run ruff check . && uv run ruff format --check .
+uv run kvault hash-password # prints a value for OWNER_PASSWORD_HASH
+cp .env.example .env        # set PUBLIC_URL=http://localhost:8000 for local tests
+uv run kvault serve
+```
+
+On Windows use WSL or Docker. `curl localhost:8000/healthz` should return `{"status":"ok",...}`.
+
+### Connecting Claude
+
+1. Deploy behind TLS (see `Dockerfile`, `docker-compose.example.yml`, `Caddyfile.example`).
+2. In Claude: *Settings → Connectors → Add custom connector*, URL `https://<your-domain>/mcp`. Leave client ID/secret empty.
+3. Claude opens the `/login` page; approve with the owner password. The connector then appears in the mobile app too.
 
 ## Deployment target
 
-A single small VPS (2-4 vCPU, 4-8 GB RAM, CPU only), vault size under ~10k notes. Run as a systemd service or container behind a TLS-terminating reverse proxy. Streamable HTTP with a bearer token is the primary transport; stdio may be added for local development.
+A single small VPS (2-4 vCPU, 4-8 GB RAM, CPU only), vault size under ~10k notes. Run as a systemd service or container behind a TLS-terminating reverse proxy. Streamable HTTP (stateless, OAuth) is the primary transport; stdio may be added for local development.
 
 ## Tech stack
 
@@ -151,7 +183,7 @@ A single small VPS (2-4 vCPU, 4-8 GB RAM, CPU only), vault size under ~10k notes
 
 ## Roadmap
 
-1. **Skeleton:** project layout, config, HTTP MCP server with auth, health check.
+1. **Skeleton:** project layout, config, HTTP MCP server with OAuth, health check. *(done)*
 2. **Vault:** clone/sync, Markdown + frontmatter + wikilink parsing, SQLite schema.
 3. **Index and search:** chunking, local embeddings, hybrid search with RRF, incremental reindex.
 4. **Read tools:** `get_note`, `get_backlinks`.
@@ -161,8 +193,8 @@ A single small VPS (2-4 vCPU, 4-8 GB RAM, CPU only), vault size under ~10k notes
 
 ## Open questions
 
-- Final embedding model (benchmark on real notes, CPU latency and RAM).
-- Should inbox notes be included in search by default, or excluded unless requested?
+- Confirm the embedding model by benchmark (real notes, CPU latency and RAM).
+- Should inbox notes be included in search by default, or excluded unless requested? (Proposal: included, with an `include_inbox` flag.)
 - Webhook vs. polling for sync; which git host will deliver webhooks.
 - Chunk size and overlap defaults.
 
