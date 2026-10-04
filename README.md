@@ -2,7 +2,7 @@
 
 A self-hosted [MCP](https://modelcontextprotocol.io) server that exposes a git-backed, Obsidian-style knowledge vault for **hybrid retrieval (RAG)** and **safe capture of new knowledge**. It runs entirely locally on a small VPS.
 
-> Status: roadmap steps 1–5 (skeleton with OAuth, vault clone/sync and parsing, index and hybrid search, read and write tools) implemented. This README is the source of truth for scope; architecture and decisions are in [doc/arc42.md](doc/arc42.md) and [doc/adr/](doc/adr/).
+> Status: roadmap steps 1–6 (skeleton with OAuth, vault clone/sync and parsing, index and hybrid search, read and write tools, document extraction) implemented. This README is the source of truth for scope; architecture and decisions are in [doc/arc42.md](doc/arc42.md) and [doc/adr/](doc/adr/).
 
 ## Goal
 
@@ -32,7 +32,7 @@ The indexer understands:
 | Frontmatter (YAML) | Stored as filterable metadata |
 | `#tags` and frontmatter tags | Stored lowercased and filterable; tags and links inside code are ignored |
 | `[[wikilinks]]` (incl. aliases, headings) | Parsed into a link graph; powers backlinks. Resolved like Obsidian: by file name, or by path suffix for `[[Folder/Note]]`, case-insensitive; ambiguous names go to the shortest path |
-| PDF, DOCX, HTML | Text extracted and indexed, tied to the file path |
+| PDF, DOCX, HTML | Text extracted and indexed, tied to the file path. Document headings become the heading path; PDF chunks are headed `Page N`. No OCR ([ADR-0010](doc/adr/0010-document-extraction.md)). Files over `MAX_DOCUMENT_MB` are skipped |
 | Images and other attachments | Not indexed; kept in the repo and resolved from embeds like `![[img.png]]` |
 
 `.git/`, `.obsidian/` and `.trash/` are ignored.
@@ -90,7 +90,7 @@ Embeddings are computed locally on CPU with a small **multilingual model** suite
 | Tool | Purpose |
 |---|---|
 | `search` | Hybrid search. Params: `query`, `limit`, optional `tags`, `path_prefix`, `status`, date filters. Returns ranked chunks with sources. |
-| `get_note` | Return a note's full content and metadata (frontmatter, tags, outgoing links with resolved paths, last modified, `sha` of the content). Accepts a vault path or a name as in a `[[wikilink]]`. |
+| `get_note` | Return a note's full content and metadata (frontmatter, tags, outgoing links with resolved paths, last modified, `sha` of the content). Accepts a vault path or a name as in a `[[wikilink]]`. For PDF/DOCX/HTML it returns the extracted text. |
 | `get_backlinks` | Return notes that link to a given note, with the line containing each link, heading and alias. |
 | `server_info` | Version and index status (notes, chunks, indexed commit, last sync, last error). |
 | `add_note` | Capture new knowledge into the inbox (see below). Commits and pushes. |
@@ -159,7 +159,7 @@ Environment variables or a `.env` file (see [.env.example](.env.example)), no se
 - `STATE_DB_PATH` (OAuth state, back it up), `DB_PATH` (search index, rebuildable)
 - `VAULT_REPO_URL`, `VAULT_BRANCH`, `VAULT_PATH` (clone location), `VAULT_SSH_KEY` (deploy key for an SSH remote), `GIT_AUTHOR_NAME` / `GIT_AUTHOR_EMAIL` (identity of server commits). Without `VAULT_REPO_URL` the server uses (or creates) a local repository at `VAULT_PATH` and never pushes.
 - `INBOX_DIR` (default `_inbox`), `TIMEZONE`
-- `DB_PATH`, `EMBEDDING_MODEL` (`hash` = no model, for tests only), `MODEL_CACHE_DIR`, `CHUNK_MAX_CHARS`, `CHUNK_OVERLAP`, `SYNC_INTERVAL` (seconds, `0` disables periodic sync)
+- `DB_PATH`, `EMBEDDING_MODEL` (`hash` = no model, for tests only), `MODEL_CACHE_DIR`, `CHUNK_MAX_CHARS`, `CHUNK_OVERLAP`, `MAX_DOCUMENT_MB`, `SYNC_INTERVAL` (seconds, `0` disables periodic sync)
 
 ## Development
 
@@ -190,7 +190,7 @@ A single small VPS (2-4 vCPU, 4-8 GB RAM, CPU only), vault size under ~10k notes
 - SQLite (FTS5 + sqlite-vec)
 - Local embedding model on CPU (multilingual, German + English) via fastembed / ONNX Runtime
 - Git via the system `git` binary
-- Document extraction for PDF/DOCX/HTML (library TBD)
+- Document extraction: pypdf, python-docx, stdlib `html.parser`
 
 ## Roadmap
 
@@ -199,7 +199,7 @@ A single small VPS (2-4 vCPU, 4-8 GB RAM, CPU only), vault size under ~10k notes
 3. **Index and search:** chunking, local embeddings, hybrid search with RRF, incremental reindex. *(done)*
 4. **Read tools:** `get_note`, `get_backlinks`. *(done)*
 5. **Write tools:** `add_note` with inbox naming/metadata, edit tools, pull-rebase-push flow. *(done)*
-6. **Documents:** PDF/DOCX/HTML text extraction in the indexer.
+6. **Documents:** PDF/DOCX/HTML text extraction in the indexer. *(done)*
 7. **Hardening:** deployment docs, backups, evaluation set for retrieval quality (German + English).
 
 ## Open questions

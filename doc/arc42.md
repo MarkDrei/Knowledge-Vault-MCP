@@ -55,7 +55,8 @@ knowledge_vault_mcp/
   vault/          repo (git binary), vault (clone, lock, sync), paths, markdown (frontmatter, tags,
                   wikilinks, link rewriting), links (Obsidian link resolution)
   service.py      wires vault, index and retrieval; background sync thread
-  index/          db (schema of index.db), chunker, embedder (fastembed/ONNX), indexer (incremental)
+  index/          db (schema of index.db), chunker, embedder (fastembed/ONNX), extract (PDF/DOCX/HTML),
+                  indexer (incremental)
   retrieval/      search: BM25 + vector search, RRF, filters
   writes.py       write transaction (pull → change → commit → push → reindex, reset on failure),
                   inbox naming/frontmatter, link rewriting for moves
@@ -110,6 +111,7 @@ See [adr/](adr/):
 7. [Hybrid retrieval with RRF, no reranker](adr/0007-hybrid-retrieval-rrf.md)
 8. [Stateless Streamable HTTP](adr/0008-stateless-http.md)
 9. [ONNX embeddings via fastembed](adr/0009-onnx-embeddings-fastembed.md)
+10. [Document text extraction](adr/0010-document-extraction.md)
 
 ## 10. Quality scenarios
 
