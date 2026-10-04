@@ -62,7 +62,7 @@ knowledge_vault_mcp/
   retrieval/      search: BM25 + vector search, RRF, filters
   writes.py       write transaction (pull → change → commit → push → reindex, reset on failure),
                   inbox naming/frontmatter, link rewriting for moves
-  tools/          MCP tools: search, get_note, get_backlinks, add/update/append/move/delete_note
+  tools/          MCP tools: search, get_note, list_notes, get_backlinks, add/update/append/move/delete_note
 ```
 
 | Block | Responsibility |

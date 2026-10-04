@@ -92,6 +92,7 @@ Embeddings are computed locally on CPU with a small **multilingual model** suite
 |---|---|
 | `search` | Hybrid search. Params: `query`, `limit`, optional `tags`, `path_prefix`, `status`, date filters. Returns ranked chunks with sources. |
 | `get_note` | Return a note's full content and metadata (frontmatter, tags, outgoing links with resolved paths, last modified, `sha` of the content). Accepts a vault path or a name as in a `[[wikilink]]`. For PDF/DOCX/HTML it returns the extracted text. |
+| `list_notes` | List notes below a folder (`path_prefix`) with title, kind, status and last change; sorted by path, up to 1000. |
 | `get_backlinks` | Return notes that link to a given note, with the line containing each link, heading and alias. |
 | `server_info` | Version and index status (notes, chunks, indexed commit, last sync, last error). |
 | `add_note` | Capture new knowledge into the inbox (see below). Commits and pushes. |

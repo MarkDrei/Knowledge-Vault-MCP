@@ -40,3 +40,20 @@ def test_backlinks_follow_sync(client, remote):
     client.service.sync_and_index()
     result = tool(client, "get_backlinks", path="Kochen/Brot.md")
     assert [b["path"] for b in result["backlinks"]] == ["Neu.md"]
+
+
+def test_list_notes(client):
+    result = tool(client, "list_notes")
+    assert [n["path"] for n in result["notes"]] == [
+        "Infra/VPS.md",
+        "Kochen/Brot.md",
+        "Ops/Backup-Strategie.md",
+        "Tools/Restic.md",
+    ]
+    assert result["total"] == 4 and result["truncated"] is False
+    assert result["notes"][1]["title"] == "Sauerteigbrot" and result["notes"][1]["kind"] == "md"
+    tools_only = tool(client, "list_notes", path_prefix="/Tools/")
+    assert [n["path"] for n in tools_only["notes"]] == ["Tools/Restic.md"]
+    limited = tool(client, "list_notes", limit=1)
+    assert len(limited["notes"]) == 1 and limited["truncated"] is True
+    assert tool(client, "list_notes", path_prefix="100%_")["total"] == 0
