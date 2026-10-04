@@ -73,11 +73,16 @@ class NoteWriter:
     def _transaction(self, message: str, change: Callable[[], tuple[list[str], WriteResult]]) -> WriteResult:
         repo = self.vault.repo
         with self.vault.lock:
+            dirty = repo.dirty_paths()
+            if dirty:  # a rollback (reset --hard) would destroy these edits
+                shown = ", ".join(dirty[:5]) + (" ..." if len(dirty) > 5 else "")
+                raise WriteError(f"the vault has uncommitted changes, commit them first: {shown}")
             before = repo.head()
-            try:
-                repo.pull_rebase()
-            except GitError as e:
-                raise WriteError(f"could not pull from the vault remote, nothing was changed: {e}") from e
+            if self.vault.git_sync:
+                try:
+                    repo.pull_rebase()
+                except GitError as e:
+                    raise WriteError(f"could not pull from the vault remote, nothing was changed: {e}") from e
             self.service.indexer.update()  # so link rewriting and checks see the latest state
             touched: list[str] = []
             try:
@@ -87,7 +92,8 @@ class NoteWriter:
                     result.details["unchanged"] = True
                     return result
                 result.commit = repo.commit(touched, message)
-                repo.push()
+                if self.vault.git_sync:
+                    repo.push()
             except Exception as e:
                 try:
                     repo.reset_hard(before, touched)

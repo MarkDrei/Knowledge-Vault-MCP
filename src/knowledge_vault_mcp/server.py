@@ -54,6 +54,7 @@ def build_mcp(settings: Settings, store: StateStore, service: VaultService) -> M
             "name": "knowledge-vault",
             "version": __version__,
             "vault_remote_configured": bool(settings.vault_repo_url),
+            "inbox_dir": settings.inbox_dir,
             "index": service.status(),
         }
 

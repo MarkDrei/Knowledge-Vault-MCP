@@ -54,7 +54,7 @@ def _percentile(values: list[float], pct: float) -> float:
 
 def evaluate(service: VaultService, queries: list[EvalQuery], k: int = 5) -> dict:
     missing = sorted({p for q in queries for p in q.relevant if not service.vault.exists(p)})
-    report: dict = {"queries": len(queries), "k": k, "model": service.embedder.name, "modes": {}}
+    report: dict = {"queries": len(queries), "k": k, "model": service.indexer.model_name, "modes": {}}
     if missing:
         report["missing_paths"] = missing
     for mode in MODES:

@@ -55,7 +55,7 @@ def _escape_like(value: str) -> str:
 
 
 class Retriever:
-    def __init__(self, db: IndexDB, embedder: Embedder, inbox_dir: str):
+    def __init__(self, db: IndexDB, embedder: Embedder | None, inbox_dir: str):
         self.db = db
         self.embedder = embedder
         self.inbox_dir = inbox_dir.strip("/")
@@ -119,7 +119,7 @@ class Retriever:
         rankings: dict[str, list[int]] = {}
         if mode in ("hybrid", "keyword"):
             rankings["keyword"] = self.keyword_ranking(query, filters, k)
-        if mode in ("hybrid", "semantic"):
+        if mode in ("hybrid", "semantic") and self.embedder is not None:
             rankings["semantic"] = self.vector_ranking(query, filters, k)
         scores: dict[int, float] = {}
         sources: dict[int, set[str]] = {}

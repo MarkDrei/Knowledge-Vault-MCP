@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     vault_branch: str = "main"
     vault_path: Path = Path("./data/vault")
     vault_ssh_key: Path | None = None  # deploy key for an SSH remote
+    vault_git_sync: bool = (
+        True  # pull before / push after writes and pull periodically; false = local commits only
+    )
     git_author_name: str = "Knowledge Vault MCP"
     git_author_email: str = "kvault@localhost"
     inbox_dir: str = "_inbox"
@@ -38,7 +41,8 @@ class Settings(BaseSettings):
     # Index and search
     db_path: Path = Path("./data/index.db")
     embedding_model: str = "intfloat/multilingual-e5-small"  # "hash" = no model, tests only
-    model_cache_dir: Path = Path("./data/models")
+    embeddings_enabled: bool = True  # false = keyword search only, no model download
+    model_cache_path: Path = Path("./data/models")
     chunk_max_chars: int = 1500
     chunk_overlap: int = 150
     max_document_mb: int = 25  # larger PDF/DOCX/HTML files are skipped by the indexer

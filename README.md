@@ -76,14 +76,15 @@ A single SQLite database: FTS5 for BM25 keyword search, `sqlite-vec` for vector 
 
 **Chunking.** Notes are split at headings; each chunk keeps its heading path (`Note > Section > Subsection`) as context for the embedding. Sections longer than `CHUNK_MAX_CHARS` (default 1500, well below the 512-token limit of e5) are split at paragraph, sentence or word boundaries with `CHUNK_OVERLAP` (default 150) characters of overlap. The defaults are to be validated with the evaluation set.
 
-Embeddings are computed locally on CPU with a small **multilingual model** suited to German and English. Default: `intfloat/multilingual-e5-small` (384 dims, see [ADR-0004](doc/adr/0004-embedding-model-multilingual-e5-small.md)); to be confirmed by a benchmark on a real German/English sample. The model runs as ONNX via fastembed, without PyTorch ([ADR-0009](doc/adr/0009-onnx-embeddings-fastembed.md)). It is downloaded once from Hugging Face into `MODEL_CACHE_DIR`; afterwards there are no network calls at query or index time.
+Embeddings are computed locally on CPU with a small **multilingual model** suited to German and English. Default: `intfloat/multilingual-e5-small` (384 dims, see [ADR-0004](doc/adr/0004-embedding-model-multilingual-e5-small.md)); to be confirmed by a benchmark on a real German/English sample. The model runs as ONNX via fastembed, without PyTorch ([ADR-0009](doc/adr/0009-onnx-embeddings-fastembed.md)). It is downloaded once from Hugging Face into `MODEL_CACHE_PATH`; afterwards there are no network calls at query or index time.
 
 ### Sync and indexing
 
 - The server clones the vault repo on first start and builds the index in the background; the MCP endpoint is available immediately (search notes that the index is incomplete until the first run finishes).
 - Every `SYNC_INTERVAL` seconds a `git pull` triggers an **incremental** reindex: diff the indexed commit against the new HEAD, re-parse and re-embed only changed files, drop deleted ones. Files with an unchanged content hash are not re-embedded.
 - A full rescan happens automatically on first start, after rewritten history and when `EMBEDDING_MODEL` changes. `kvault reindex [--full]` does the same from the command line; `kvault search "query"` queries the index for debugging.
-- Only committed content is indexed: edit the vault through git (Obsidian Git plugin, the write tools), not by changing files in the server's clone.
+- Uncommitted files in the work tree (e.g. a bind-mounted checkout that is also edited on the host) are indexed as well; the periodic pull is skipped while tracked files have uncommitted changes.
+- If the embedding model cannot be loaded (or `EMBEDDINGS_ENABLED=false`), the server runs with keyword search only; `server_info` shows `semantic_search: false` and the reason.
 
 ## MCP tools (v1)
 
@@ -135,6 +136,8 @@ tags: []
 ### Write safety
 
 - All git operations (periodic sync and writes) are serialized by one in-process lock.
+- Writes are refused while tracked files have uncommitted changes, because the rollback (`git reset --hard`) would destroy them. Untracked files are never touched by a rollback.
+- With `VAULT_GIT_SYNC=false` writes are committed locally only (no pull, no push, no periodic pull).
 - Before every write the server runs `git pull --rebase` and brings the index up to date (so `move_note` sees all current links).
 - Write, commit (clear, machine-generated message), push, then reindex the touched files immediately.
 - **Any conflict or failed push aborts the operation**, resets the local branch to its previous state and returns an error to the client. Nothing is auto-resolved.
@@ -157,9 +160,9 @@ Environment variables or a `.env` file (see [.env.example](.env.example)), no se
 - `PUBLIC_URL` (external base URL; MCP endpoint is `PUBLIC_URL/mcp`), `HOST`, `PORT`, `FORWARDED_ALLOW_IPS`
 - `OWNER_PASSWORD_HASH` (from `kvault hash-password`), optional `AUTH_TOKEN`
 - `STATE_DB_PATH` (OAuth state, back it up), `DB_PATH` (search index, rebuildable)
-- `VAULT_REPO_URL`, `VAULT_BRANCH`, `VAULT_PATH` (clone location), `VAULT_SSH_KEY` (deploy key for an SSH remote), `GIT_AUTHOR_NAME` / `GIT_AUTHOR_EMAIL` (identity of server commits). Without `VAULT_REPO_URL` the server uses (or creates) a local repository at `VAULT_PATH` and never pushes.
-- `INBOX_DIR` (default `_inbox`), `TIMEZONE`
-- `DB_PATH`, `EMBEDDING_MODEL` (`hash` = no model, for tests only), `MODEL_CACHE_DIR`, `CHUNK_MAX_CHARS`, `CHUNK_OVERLAP`, `MAX_DOCUMENT_MB`, `SYNC_INTERVAL` (seconds, `0` disables periodic sync)
+- `VAULT_REPO_URL`, `VAULT_BRANCH`, `VAULT_PATH` (clone location), `VAULT_SSH_KEY` (deploy key for an SSH remote), `GIT_AUTHOR_NAME` / `GIT_AUTHOR_EMAIL` (identity of server commits). Without `VAULT_REPO_URL` the server uses an existing checkout at `VAULT_PATH` (e.g. bind-mounted) or creates a local repository there. `VAULT_GIT_SYNC` (default `true`): pull before and push after writes, pull periodically; `false` commits locally only.
+- `INBOX_DIR` (default `_inbox`; `00-Inbox` in the live vault), `TIMEZONE`
+- `DB_PATH`, `EMBEDDING_MODEL` (`hash` = no model, for tests only), `EMBEDDINGS_ENABLED` (default `true`; `false` = keyword search only), `MODEL_CACHE_PATH`, `CHUNK_MAX_CHARS`, `CHUNK_OVERLAP`, `MAX_DOCUMENT_MB`, `SYNC_INTERVAL` (seconds, `0` disables periodic sync)
 
 ## Development
 

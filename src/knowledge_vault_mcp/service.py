@@ -21,7 +21,9 @@ class VaultService:
         self.settings = settings
         self.vault = Vault(settings)
         self.db = IndexDB(settings.db_path)
-        self.embedder = embedder or make_embedder(settings.embedding_model, settings.model_cache_dir)
+        if embedder is None and settings.embeddings_enabled:
+            embedder = make_embedder(settings.embedding_model, settings.model_cache_path)
+        self.embedder: Embedder | None = embedder
         self.indexer = Indexer(settings, self.db, self.vault, self.embedder)
         self.retriever = Retriever(self.db, self.embedder, settings.inbox_dir)
         self._stop = threading.Event()
@@ -31,6 +33,7 @@ class VaultService:
         self.last_error: str | None = None
         self.last_stats: IndexStats | None = None
         self._resolver: tuple[str | None, LinkResolver] | None = None
+        self.model_error: str | None = None
 
     # ---- lifecycle ----
     def start(self) -> None:
@@ -50,12 +53,28 @@ class VaultService:
     def ready(self) -> bool:
         return self._ready.is_set()
 
+    def load_model(self) -> None:
+        """Load the embedding model; if that fails, continue with keyword search only."""
+        if self.embedder is None:
+            return
+        try:
+            self.embedder.embed_query("warm-up")
+        except Exception as e:
+            log.exception("cannot load embedding model %s; keyword search only", self.embedder.name)
+            self.model_error = f"cannot load embedding model {self.embedder.name}: {e}"
+            self.embedder = self.indexer.embedder = self.retriever.embedder = None
+
+    @property
+    def semantic_search(self) -> bool:
+        return self.embedder is not None
+
     def _run(self) -> None:
         try:
             self.vault.open()
         except Exception as e:
             log.exception("cannot open vault")
             self.last_error = f"cannot open vault: {e}"
+        self.load_model()
         self.sync_and_index()
         self._ready.set()
         interval = self.settings.sync_interval
@@ -94,7 +113,10 @@ class VaultService:
             "notes": self.db.note_count(),
             "chunks": self.db.chunk_count(),
             "indexed_commit": self.db.get_meta("indexed_commit"),
-            "embedding_model": self.embedder.name,
+            "embedding_model": self.embedder.name if self.embedder else None,
+            "semantic_search": self.semantic_search,
+            "model_error": self.model_error,
+            "git_sync": self.settings.vault_git_sync,
             "last_sync": int(self.last_sync) if self.last_sync else None,
             "last_error": self.last_error,
             "last_index_run": asdict(self.last_stats) if self.last_stats else None,

@@ -18,7 +18,7 @@ uv run kvault hash-password      # or: docker compose run --rm kvault kvault has
 
 Set at least `PUBLIC_URL=https://vault.example.com`, `OWNER_PASSWORD_HASH`, `VAULT_REPO_URL`, `VAULT_SSH_KEY`. Leave `AUTH_TOKEN` empty unless scripts need it; if set, use a long random value (`openssl rand -base64 32`). Never commit `.env`.
 
-The first start downloads the embedding model (~0.5 GB for `intfloat/multilingual-e5-small`) from `huggingface.co` into `MODEL_CACHE_DIR`. After that no outbound access besides the git remote is needed. To run fully offline, copy a populated cache directory onto the server.
+The first start downloads the embedding model (~0.5 GB for `intfloat/multilingual-e5-small`) from `huggingface.co` into `MODEL_CACHE_PATH`. After that no outbound access besides the git remote is needed. To run fully offline, copy a populated cache directory onto the server.
 
 ## 3a. Run with Docker Compose (recommended)
 
