@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     model_cache_dir: Path = Path("./data/models")
     chunk_max_chars: int = 1500
     chunk_overlap: int = 150
+    max_document_mb: int = 25  # larger PDF/DOCX/HTML files are skipped by the indexer
     sync_interval: int = 300  # seconds between `git pull` + incremental reindex; 0 disables
 
     @field_validator("public_url")

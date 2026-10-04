@@ -17,8 +17,9 @@ from knowledge_vault_mcp.config import Settings
 from knowledge_vault_mcp.index.chunker import Chunk, chunk_markdown
 from knowledge_vault_mcp.index.db import IndexDB
 from knowledge_vault_mcp.index.embedder import Embedder, to_blob
+from knowledge_vault_mcp.index.extract import extract
 from knowledge_vault_mcp.vault.markdown import WikiLink, parse_note
-from knowledge_vault_mcp.vault.paths import is_indexable, is_markdown, kind_of
+from knowledge_vault_mcp.vault.paths import is_document, is_indexable, is_markdown, kind_of
 from knowledge_vault_mcp.vault.vault import Vault
 
 log = logging.getLogger(__name__)
@@ -181,13 +182,24 @@ class Indexer:
             note = parse_note(path, data.decode("utf-8", errors="replace"))
             chunks = chunk_markdown(note.body, max_chars, overlap) or [Chunk([], note.title)]
             return Document(note.title, note.frontmatter, note.tags, note.links, chunks)
+        if is_document(path):
+            self._check_size(path, data)
+            doc = extract(path, data)
+            chunks = chunk_markdown(doc.text, max_chars, overlap) or [Chunk([], doc.title)]
+            return Document(doc.title, chunks=chunks)
         raise ValueError(f"unsupported file type: {path}")
+
+    def _check_size(self, path: str, data: bytes) -> None:
+        limit = self.settings.max_document_mb * 1024 * 1024
+        if len(data) > limit:
+            raise ValueError(f"{path} is larger than MAX_DOCUMENT_MB={self.settings.max_document_mb}")
 
     def extract_text(self, path: str, data: bytes) -> str:
         """Plain text of a file as the indexer sees it (Markdown is returned unchanged)."""
         if is_markdown(path):
             return data.decode("utf-8", errors="replace")
-        raise ValueError(f"unsupported file type: {path}")
+        self._check_size(path, data)
+        return extract(path, data).text
 
     @staticmethod
     def _passage(doc: Document, chunk: Chunk) -> str:

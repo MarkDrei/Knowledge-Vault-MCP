@@ -82,7 +82,10 @@ def register(mcp: MCPServer, service: VaultService) -> None:
                 ],
             )
         else:
-            text = service.indexer.extract_text(path, data)
+            try:
+                text = service.indexer.extract_text(path, data)
+            except ValueError as e:
+                raise ToolError(str(e)) from e
             result.update(
                 title=row[0] if row else path, kind=row[1] if row else None, frontmatter={}, tags=tags
             )

@@ -33,7 +33,7 @@ class Remote:
     def url(self) -> str:
         return str(self.bare)
 
-    def commit(self, files: dict[str, str | None], message: str = "edit") -> None:
+    def commit(self, files: dict[str, str | bytes | None], message: str = "edit") -> None:
         if self._has_main():
             git(self.work, "pull", "-q", "--rebase", "origin", "main")
         for rel, content in files.items():
@@ -42,7 +42,10 @@ class Remote:
                 p.unlink()
                 continue
             p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(content, encoding="utf-8")
+            if isinstance(content, bytes):
+                p.write_bytes(content)
+            else:
+                p.write_text(content, encoding="utf-8")
         git(self.work, "add", "-A")
         git(self.work, "commit", "-q", "-m", message)
         git(self.work, "push", "-q", "origin", "HEAD:main")
