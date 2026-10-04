@@ -55,6 +55,7 @@ def _reindex(args: argparse.Namespace) -> int:
 
     service = VaultService(Settings())
     service.vault.open()
+    service.load_model()
     if not args.no_pull:
         service.vault.sync()
     stats = service.indexer.update(force_full=args.full)
@@ -68,6 +69,7 @@ def _search(args: argparse.Namespace) -> int:
     from knowledge_vault_mcp.service import VaultService
 
     service = VaultService(Settings())
+    service.load_model()
     filters = SearchFilters(tags=args.tag or [], path_prefix=args.path)
     for hit in service.retriever.search(args.query, args.limit, filters, mode=args.mode):
         heading = " > ".join(hit.headings)
@@ -83,6 +85,7 @@ def _eval(args: argparse.Namespace) -> int:
     queries = load_queries(args.file)
     service = eval_service(Settings(), args.model, args.db)
     service.vault.open()
+    service.load_model()
     if not args.no_pull:
         service.vault.sync()
     stats = service.indexer.update()

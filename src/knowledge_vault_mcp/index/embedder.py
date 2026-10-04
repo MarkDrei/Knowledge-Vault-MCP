@@ -1,7 +1,7 @@
 """Local text embeddings (ADR-0004).
 
 `FastEmbedEmbedder` runs an ONNX export of the model on CPU via fastembed (no PyTorch).
-The model is downloaded once into `MODEL_CACHE_DIR`; afterwards no network is needed.
+The model is downloaded once into `MODEL_CACHE_PATH`; afterwards no network is needed.
 `HashEmbedder` (`EMBEDDING_MODEL=hash`) has no semantics at all: it exists for tests and
 for running without a model download.
 """

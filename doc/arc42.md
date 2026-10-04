@@ -80,9 +80,9 @@ knowledge_vault_mcp/
 
 **Search:** `search` → embed query → FTS5 query and exact vector scan, both with the filters in SQL → RRF → ranked chunks with path, heading path, text, metadata.
 
-**Write (e.g. `add_note`):** acquire write lock → `git pull --rebase` → incremental reindex → write file(s) → `git commit` → `git push` → incremental reindex → release lock. A failed pull or push resets the local branch to the commit before the operation, removes files it created and returns an error.
+**Write (e.g. `add_note`):** acquire write lock → refuse if tracked files have uncommitted changes → `git pull --rebase` → incremental reindex → write file(s) → `git commit` → `git push` → incremental reindex → release lock. A failed pull or push resets the local branch to the commit before the operation, removes files it created and returns an error. With `VAULT_GIT_SYNC=false` pull and push are skipped.
 
-**Sync:** background thread every `SYNC_INTERVAL` → acquire write lock → `git pull --rebase` → diff indexed commit..HEAD → reindex changed, drop deleted files. On start the same runs once as a full scan; the server already accepts requests meanwhile.
+**Sync:** background thread every `SYNC_INTERVAL` → acquire write lock → `git pull --rebase` (skipped if git sync is off or tracked files are dirty) → diff indexed commit..HEAD plus uncommitted and previously uncommitted files → reindex changed, drop deleted files. On start the same runs once as a full scan; the server already accepts requests meanwhile.
 
 ## 7. Deployment view
 

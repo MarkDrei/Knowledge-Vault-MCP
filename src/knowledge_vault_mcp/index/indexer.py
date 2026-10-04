@@ -20,6 +20,7 @@ from knowledge_vault_mcp.index.embedder import Embedder, to_blob
 from knowledge_vault_mcp.index.extract import extract
 from knowledge_vault_mcp.vault.markdown import WikiLink, parse_note
 from knowledge_vault_mcp.vault.paths import is_document, is_indexable, is_markdown, kind_of
+from knowledge_vault_mcp.vault.repo import FileChange
 from knowledge_vault_mcp.vault.vault import Vault
 
 log = logging.getLogger(__name__)
@@ -47,11 +48,15 @@ class IndexStats:
 
 
 class Indexer:
-    def __init__(self, settings: Settings, db: IndexDB, vault: Vault, embedder: Embedder):
+    def __init__(self, settings: Settings, db: IndexDB, vault: Vault, embedder: Embedder | None):
         self.settings = settings
         self.db = db
         self.vault = vault
         self.embedder = embedder
+
+    @property
+    def model_name(self) -> str:
+        return self.embedder.name if self.embedder else "none"
 
     # ---- entry points ----
     def update(self, force_full: bool = False) -> IndexStats:
@@ -59,14 +64,24 @@ class Indexer:
         with self.vault.lock:
             started = time.monotonic()
             head = self.vault.repo.head()
-            if self.db.get_meta("embedding_model") != self.embedder.name:
+            if self.db.get_meta("embedding_model") != self.model_name:
                 force_full = True
                 self.db.reset()
             indexed = self.db.get_meta("indexed_commit")
             changes = None if force_full else self.vault.changes(indexed, head)
+            # Uncommitted edits (e.g. a checkout also edited on the host) are indexed too, and
+            # files that were dirty last time are re-checked in case the edit was reverted.
+            dirty = self.vault.repo.dirty_paths(untracked=True)
+            if changes is not None:
+                previously = json.loads(self.db.get_meta("dirty_paths") or "[]")
+                known = {c.path for c in changes}
+                changes = changes + [
+                    FileChange("M", p) for p in dict.fromkeys(dirty + previously) if p not in known
+                ]
             stats = self._full(head) if changes is None else self._incremental(changes, indexed, head)
             self.db.set_meta("indexed_commit", head)
-            self.db.set_meta("embedding_model", self.embedder.name)
+            self.db.set_meta("dirty_paths", json.dumps(dirty))
+            self.db.set_meta("embedding_model", self.model_name)
             self.db.set_meta("indexed_at", str(int(time.time())))
             stats.seconds = round(time.monotonic() - started, 3)
             if stats.mode != "none":
@@ -136,7 +151,10 @@ class Indexer:
             return
         try:
             doc = self.build_document(path, data)
-            vectors = self.embedder.embed_passages([self._passage(doc, c) for c in doc.chunks])
+            if self.embedder:
+                vectors = list(self.embedder.embed_passages([self._passage(doc, c) for c in doc.chunks]))
+            else:
+                vectors = [None] * len(doc.chunks)
         except Exception:  # one broken file must not stop the whole index run
             log.exception("failed to index %s", path)
             stats.failed += 1
@@ -168,7 +186,7 @@ class Indexer:
                 headings = json.dumps(chunk.headings, ensure_ascii=False)
                 cur = conn.execute(
                     "INSERT INTO chunks (path, ord, headings, text, embedding) VALUES (?, ?, ?, ?, ?)",
-                    (path, ord_, headings, chunk.text, to_blob(vector)),
+                    (path, ord_, headings, chunk.text, None if vector is None else to_blob(vector)),
                 )
                 conn.execute(
                     "INSERT INTO chunks_fts (rowid, title, headings, text) VALUES (?, ?, ?, ?)",

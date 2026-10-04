@@ -39,11 +39,20 @@ class Vault:
         with self.lock:
             self.repo.ensure_clone()
 
+    @property
+    def git_sync(self) -> bool:
+        return self.settings.vault_git_sync
+
     def sync(self) -> SyncResult:
-        """Pull remote changes. Raises GitError if the pull fails (the clone stays unchanged)."""
+        """Pull remote changes. Raises GitError if the pull fails (the clone stays unchanged).
+
+        Skipped when VAULT_GIT_SYNC is off or the work tree has uncommitted changes (e.g. a
+        bind-mounted checkout that is also edited on the host): a rebase would refuse anyway.
+        """
         with self.lock:
             old = self.repo.head()
-            self.repo.pull_rebase()
+            if self.git_sync and not self.repo.dirty_paths():
+                self.repo.pull_rebase()
             return SyncResult(old, self.repo.head())
 
     # ---- reading ----

@@ -103,6 +103,12 @@ class GitRepo:
         except GitError:
             return False
 
+    def dirty_paths(self, untracked: bool = False) -> list[str]:
+        """Tracked paths with uncommitted changes; with `untracked`, also new files (not ignored)."""
+        mode = "--untracked-files=all" if untracked else "--untracked-files=no"
+        out = self.run("status", "--porcelain", "-z", mode, "--no-renames")
+        return [entry[3:] for entry in out.split("\0") if len(entry) > 3]
+
     def ls_files(self) -> list[str]:
         return [p for p in self.run("ls-files", "-z").split("\0") if p]
 

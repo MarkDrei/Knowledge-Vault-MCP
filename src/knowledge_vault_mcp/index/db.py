@@ -62,8 +62,6 @@ CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5 (
 );
 """
 
-_TABLES = ("meta", "notes", "tags", "links", "chunks", "chunks_fts")
-
 
 class IndexDB:
     def __init__(self, path: Path | str):
@@ -101,8 +99,12 @@ class IndexDB:
         conn.execute("COMMIT")
 
     def _drop(self, conn: sqlite3.Connection) -> None:
-        for table in _TABLES:
-            conn.execute(f"DROP TABLE IF EXISTS {table}")  # noqa: S608 - fixed names
+        """Drop every table, including ones from older layouts of this file (it is derived data)."""
+        rows = conn.execute("SELECT name, sql FROM sqlite_master WHERE type = 'table'").fetchall()
+        virtual = [name for name, sql in rows if (sql or "").upper().startswith("CREATE VIRTUAL")]
+        for name in [*virtual, *(name for name, _ in rows if name not in virtual)]:
+            if not name.startswith("sqlite_"):
+                conn.execute(f'DROP TABLE IF EXISTS "{name}"')  # noqa: S608 - names from sqlite_master
 
     def reset(self) -> None:
         """Delete all indexed data (used before a full rebuild)."""
