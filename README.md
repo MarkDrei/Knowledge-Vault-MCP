@@ -2,7 +2,7 @@
 
 A self-hosted [MCP](https://modelcontextprotocol.io) server that exposes a git-backed, Obsidian-style knowledge vault for **hybrid retrieval (RAG)** and **safe capture of new knowledge**. It runs entirely locally on a small VPS.
 
-> Status: roadmap steps 1–4 (skeleton with OAuth, vault clone/sync and parsing, index and hybrid search, read tools) implemented. This README is the source of truth for scope; architecture and decisions are in [doc/arc42.md](doc/arc42.md) and [doc/adr/](doc/adr/).
+> Status: roadmap steps 1–5 (skeleton with OAuth, vault clone/sync and parsing, index and hybrid search, read and write tools) implemented. This README is the source of truth for scope; architecture and decisions are in [doc/arc42.md](doc/arc42.md) and [doc/adr/](doc/adr/).
 
 ## Goal
 
@@ -94,7 +94,12 @@ Embeddings are computed locally on CPU with a small **multilingual model** suite
 | `get_backlinks` | Return notes that link to a given note, with the line containing each link, heading and alias. |
 | `server_info` | Version and index status (notes, chunks, indexed commit, last sync, last error). |
 | `add_note` | Capture new knowledge into the inbox (see below). Commits and pushes. |
-| `update_note` / `append_note` / `move_note` / `delete_note` | Edit any existing note in the vault. Each is one commit, then push. `move_note` rewrites wikilinks in linking notes in the same commit. |
+| `update_note` | Replace the full content of a Markdown note. Optional `expected_sha` (from `get_note`) rejects the update if the note changed in between. |
+| `append_note` | Append Markdown to the end of a note. |
+| `move_note` | Move/rename a note or attachment. Rewrites wikilinks in linking notes in the same commit, keeping headings, aliases and embeds; links that still resolve are left alone, and links that the move would redirect to the moved file are pinned to their old target. |
+| `delete_note` | Delete a note; links to it are reported as `dangling_backlinks`, not changed. |
+
+Edit tools work on any existing note in the vault; each change is one commit, then push. A frontmatter `updated` field is refreshed on edits if the note has one (no frontmatter is added to notes without it). An edit that changes nothing creates no commit.
 
 ### Capturing new knowledge (inbox)
 
@@ -109,7 +114,7 @@ e.g. 2026-10-03-184512-vps-backup-strategy.md
 
 Time is local to the configured timezone (default `Europe/Berlin`). If a file of that name already exists, a numeric suffix is appended (`-2`, `-3`, ...); existing files are never overwritten.
 
-**Metadata.** The server stamps frontmatter on every captured note; the caller supplies title, body and optionally tags and a source:
+**Metadata.** The server stamps frontmatter on every captured note; the caller supplies title, body and optionally tags, a source and a source URL. `captured_by` is the name the OAuth client registered with (e.g. `Claude`). The body gets a `# Title` heading unless it starts with one:
 
 ```yaml
 ---
@@ -120,7 +125,7 @@ updated: 2026-10-03T18:45:12+02:00
 status: inbox          # inbox -> curated (set by the curation process)
 source: mcp            # origin: mcp | web | manual | ...
 captured_by: claude    # client/agent name as reported over MCP
-source_url:            # optional
+source_url: https://…  # only if given
 tags: []
 ---
 ```
@@ -130,7 +135,7 @@ tags: []
 ### Write safety
 
 - All git operations (periodic sync and writes) are serialized by one in-process lock.
-- Before every write the server runs `git pull --rebase`.
+- Before every write the server runs `git pull --rebase` and brings the index up to date (so `move_note` sees all current links).
 - Write, commit (clear, machine-generated message), push, then reindex the touched files immediately.
 - **Any conflict or failed push aborts the operation**, resets the local branch to its previous state and returns an error to the client. Nothing is auto-resolved.
 - The design assumes a single server instance per vault (see [ADR-0006](doc/adr/0006-git-write-flow.md)).
@@ -193,7 +198,7 @@ A single small VPS (2-4 vCPU, 4-8 GB RAM, CPU only), vault size under ~10k notes
 2. **Vault:** clone/sync, Markdown + frontmatter + wikilink parsing, SQLite schema. *(done)*
 3. **Index and search:** chunking, local embeddings, hybrid search with RRF, incremental reindex. *(done)*
 4. **Read tools:** `get_note`, `get_backlinks`. *(done)*
-5. **Write tools:** `add_note` with inbox naming/metadata, edit tools, pull-rebase-push flow.
+5. **Write tools:** `add_note` with inbox naming/metadata, edit tools, pull-rebase-push flow. *(done)*
 6. **Documents:** PDF/DOCX/HTML text extraction in the indexer.
 7. **Hardening:** deployment docs, backups, evaluation set for retrieval quality (German + English).
 

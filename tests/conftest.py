@@ -97,9 +97,9 @@ def call_tool(client, name: str, arguments: dict | None = None, token: str = STA
     )
 
 
-def tool(client, name: str, **arguments) -> dict:
-    """Call a tool and return its structured result; raises if the tool reported an error."""
-    r = call_tool(client, name, arguments)
+def tool(client, name: str, _token: str = STATIC_TOKEN, **arguments) -> dict:
+    """Call a tool and return its result as a dict; raises if the tool reported an error."""
+    r = call_tool(client, name, arguments, token=_token)
     assert r.status_code == 200, r.text
     result = r.json()["result"]
     if result.get("isError"):
