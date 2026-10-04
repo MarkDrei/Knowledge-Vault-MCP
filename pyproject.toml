@@ -5,8 +5,13 @@ description = "Self-hosted MCP server for hybrid retrieval over a git-backed Obs
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "fastembed>=0.8.1",
     "mcp>=2.3,<3",
     "pydantic-settings>=2.6",
+    "pypdf>=6.19.0",
+    "python-docx>=1.2.0",
+    "pyyaml>=6.0.3",
+    "sqlite-vec>=0.1.9",
     "uvicorn>=0.30",
 ]
 
@@ -40,5 +45,6 @@ select = ["E", "F", "I", "UP", "B", "SIM", "S"]
 ignore = ["S101"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S105", "S106"]
+"tests/**" = ["S105", "S106", "S603", "S607"]
 "src/knowledge_vault_mcp/auth/login.py" = ["E501"]  # inline HTML template
+"src/knowledge_vault_mcp/retrieval/search.py" = ["S608"]  # only fixed SQL clauses are interpolated
