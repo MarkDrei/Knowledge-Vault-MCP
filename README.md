@@ -2,7 +2,7 @@
 
 A self-hosted [MCP](https://modelcontextprotocol.io) server that exposes a git-backed, Obsidian-style knowledge vault for **hybrid retrieval (RAG)** and **safe capture of new knowledge**. It runs entirely locally on a small VPS.
 
-> Status: roadmap steps 1–6 (skeleton with OAuth, vault clone/sync and parsing, index and hybrid search, read and write tools, document extraction) implemented. This README is the source of truth for scope; architecture and decisions are in [doc/arc42.md](doc/arc42.md) and [doc/adr/](doc/adr/).
+> Status: roadmap steps 1–7 implemented (v1 feature complete). Still open: running the embedding model benchmark on a real evaluation set (see [Open questions](#open-questions)). This README is the source of truth for scope; architecture and decisions are in [doc/arc42.md](doc/arc42.md) and [doc/adr/](doc/adr/), operations in [doc/deployment.md](doc/deployment.md).
 
 ## Goal
 
@@ -172,17 +172,26 @@ cp .env.example .env        # set PUBLIC_URL=http://localhost:8000 for local tes
 uv run kvault serve
 ```
 
-On Windows use WSL or Docker. `curl localhost:8000/healthz` should return `{"status":"ok",...}`.
+On Windows use WSL or Docker. `curl localhost:8000/healthz` should return `{"status":"ok",...}`. Without `VAULT_REPO_URL` the server uses a local git repository in `VAULT_PATH`; `EMBEDDING_MODEL=hash` avoids the model download (keyword search works, semantic search is meaningless). Tests use a temporary bare repository as the remote and the hash embedder, so they need no network.
+
+Other commands (all read the same `.env`):
+
+| Command | Purpose |
+|---|---|
+| `kvault reindex [--full] [--no-pull]` | Pull and update the index; `--full` re-scans every file |
+| `kvault search "query" [--mode keyword\|semantic\|hybrid] [--tag t] [--path p]` | Query the index from the shell |
+| `kvault eval eval/queries.yaml [--model M] [--json]` | Retrieval quality per search mode and language; benchmark another model in a separate index |
+| `kvault backup <dir> [--keep 14]` | Consistent online copy of `state.db` |
 
 ### Connecting Claude
 
-1. Deploy behind TLS (see `Dockerfile`, `docker-compose.example.yml`, `Caddyfile.example`).
+1. Deploy behind TLS ([doc/deployment.md](doc/deployment.md): deploy key, Docker or systemd, reverse proxy, backups).
 2. In Claude: *Settings → Connectors → Add custom connector*, URL `https://<your-domain>/mcp`. Leave client ID/secret empty.
 3. Claude opens the `/login` page; approve with the owner password. The connector then appears in the mobile app too.
 
 ## Deployment target
 
-A single small VPS (2-4 vCPU, 4-8 GB RAM, CPU only), vault size under ~10k notes. Run as a systemd service or container behind a TLS-terminating reverse proxy. Streamable HTTP (stateless, OAuth) is the primary transport; stdio may be added for local development.
+A single small VPS (2-4 vCPU, 4-8 GB RAM, CPU only), vault size under ~10k notes. Run as a systemd service or container behind a TLS-terminating reverse proxy; see [doc/deployment.md](doc/deployment.md). Streamable HTTP (stateless, OAuth) is the primary transport; stdio may be added for local development.
 
 ## Tech stack
 
@@ -200,15 +209,15 @@ A single small VPS (2-4 vCPU, 4-8 GB RAM, CPU only), vault size under ~10k notes
 4. **Read tools:** `get_note`, `get_backlinks`. *(done)*
 5. **Write tools:** `add_note` with inbox naming/metadata, edit tools, pull-rebase-push flow. *(done)*
 6. **Documents:** PDF/DOCX/HTML text extraction in the indexer. *(done)*
-7. **Hardening:** deployment docs, backups, evaluation set for retrieval quality (German + English).
+7. **Hardening:** deployment docs, backups, evaluation set for retrieval quality (German + English). *(done: [deployment guide](doc/deployment.md), `kvault backup`, `kvault eval` with an example set; the benchmark itself needs real notes)*
 
 ## Open questions
 
 Decided: inbox notes are included in search by default; `include_inbox=false` excludes them.
 
 
-- Confirm the embedding model by benchmark (real notes, CPU latency and RAM).
-- Webhook vs. polling for sync; which git host will deliver webhooks.
+- Confirm the embedding model by benchmark (real notes, CPU latency and RAM): the tooling is in place (`kvault eval --model ...`, [deployment guide §8](doc/deployment.md#8-retrieval-evaluation-and-model-benchmark)); it needs an evaluation set written from the real vault.
+- Webhook vs. polling for sync; which git host will deliver webhooks. Polling (`SYNC_INTERVAL`) is implemented; a webhook endpoint can be added once the git host is decided.
 - Chunk size and overlap: defaults set (1500/150 characters), to be confirmed with the evaluation set.
 
 ## License

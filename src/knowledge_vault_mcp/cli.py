@@ -1,10 +1,11 @@
-"""Command line entry point: `kvault serve | hash-password | reindex | search`."""
+"""Command line entry point: `kvault serve | hash-password | reindex | search | eval | backup`."""
 
 import argparse
 import getpass
 import json
 import logging
 import sys
+from pathlib import Path
 
 from knowledge_vault_mcp import __version__
 
@@ -75,6 +76,34 @@ def _search(args: argparse.Namespace) -> int:
     return 0
 
 
+def _eval(args: argparse.Namespace) -> int:
+    from knowledge_vault_mcp.config import Settings
+    from knowledge_vault_mcp.evaluation import eval_service, evaluate, format_report, load_queries
+
+    queries = load_queries(args.file)
+    service = eval_service(Settings(), args.model, args.db)
+    service.vault.open()
+    if not args.no_pull:
+        service.vault.sync()
+    stats = service.indexer.update()
+    report = evaluate(service, queries, k=args.k)
+    report["index_seconds"] = stats.seconds
+    print(
+        json.dumps(report, indent=2, ensure_ascii=False)
+        if args.json
+        else format_report(report, stats.seconds)
+    )
+    return 0
+
+
+def _backup(args: argparse.Namespace) -> int:
+    from knowledge_vault_mcp.backup import backup_state
+    from knowledge_vault_mcp.config import Settings
+
+    print(backup_state(Settings().state_db_path, args.dest, keep=args.keep))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="kvault", description="Knowledge-Vault-MCP server")
     parser.add_argument("--version", action="version", version=__version__)
@@ -96,6 +125,18 @@ def main(argv: list[str] | None = None) -> int:
     se.add_argument("--path")
     se.add_argument("--mode", choices=["hybrid", "keyword", "semantic"], default="hybrid")
     se.set_defaults(func=_search)
+    ev = sub.add_parser("eval", help="measure retrieval quality / benchmark an embedding model")
+    ev.add_argument("file", type=Path, help="YAML evaluation set (see eval/queries.example.yaml)")
+    ev.add_argument("--model", help="embedding model to benchmark (builds a separate index)")
+    ev.add_argument("--db", type=Path, help="index file to use for --model")
+    ev.add_argument("--k", type=int, default=5)
+    ev.add_argument("--json", action="store_true")
+    ev.add_argument("--no-pull", action="store_true")
+    ev.set_defaults(func=_eval)
+    bk = sub.add_parser("backup", help="consistent copy of state.db (OAuth clients and tokens)")
+    bk.add_argument("dest", type=Path, help="backup directory")
+    bk.add_argument("--keep", type=int, default=14, help="number of backups to keep (0 = all)")
+    bk.set_defaults(func=_backup)
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     return args.func(args)
