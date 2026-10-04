@@ -189,7 +189,7 @@ Other commands (all read the same `.env`):
 
 ### Connecting Claude
 
-1. Deploy behind TLS ([doc/deployment.md](doc/deployment.md): deploy key, Docker or systemd, reverse proxy, backups).
+1. Deploy behind TLS ([doc/deployment.md](doc/deployment.md): deploy key, Docker with Caddy or an existing Traefik (`docker-compose.traefik.example.yml`), systemd, backups). The live instance runs at `https://vault.ironstrike.de`, see [deployment §3a′](doc/deployment.md#live-instance-vaultironstrikede).
 2. In Claude: *Settings → Connectors → Add custom connector*, URL `https://<your-domain>/mcp`. Leave client ID/secret empty.
 3. Claude opens the `/login` page; approve with the owner password. The connector then appears in the mobile app too.
 
