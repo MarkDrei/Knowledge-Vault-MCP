@@ -15,6 +15,7 @@ from knowledge_vault_mcp.vault.markdown import parse_note
 from knowledge_vault_mcp.vault.paths import is_markdown
 
 MAX_CONTENT_CHARS = 200_000
+MAX_LIST = 1000
 
 PathParam = Annotated[
     str,
@@ -95,6 +96,34 @@ def register(mcp: MCPServer, service: VaultService) -> None:
         result["truncated"] = len(text) > MAX_CONTENT_CHARS
         result["content"] = text[:MAX_CONTENT_CHARS]
         return result
+
+    @mcp.tool(annotations=READ_ONLY)
+    def list_notes(
+        path_prefix: Annotated[
+            str, Field(description="Only notes below this folder, e.g. '10-Projects/'")
+        ] = "",
+        limit: Annotated[int, Field(ge=1, le=MAX_LIST, description="Maximum number of notes")] = 200,
+    ) -> dict:
+        """List notes (path, title, kind, status, last change), sorted by path.
+
+        Use it to browse a folder; use search to find notes by content.
+        """
+        prefix = path_prefix.strip().lstrip("/")
+        pattern = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+        conn = service.db.conn()
+        total = conn.execute(
+            "SELECT count(*) FROM notes WHERE path LIKE ? ESCAPE '\\'", (pattern,)
+        ).fetchone()[0]
+        rows = conn.execute(
+            "SELECT path, title, kind, status, modified FROM notes WHERE path LIKE ? ESCAPE '\\' "
+            "ORDER BY path LIMIT ?",
+            (pattern, limit),
+        )
+        notes = [
+            {"path": p, "title": t, "kind": k, "status": s, "modified": iso_time(settings, m)}
+            for p, t, k, s, m in rows
+        ]
+        return {"total": total, "truncated": total > len(notes), "notes": notes}
 
     @mcp.tool(annotations=READ_ONLY)
     def get_backlinks(path: PathParam) -> dict:
