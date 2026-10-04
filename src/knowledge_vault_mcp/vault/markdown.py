@@ -204,7 +204,7 @@ def _line_of(line_starts: list[int], offset: int) -> int:
 
 
 def first_heading(masked_body: str, body: str) -> str | None:
-    for masked_line, line in zip(masked_body.splitlines(), body.splitlines(), strict=False):
+    for masked_line, line in zip(masked_body.split("\n"), body.split("\n"), strict=True):
         m = _HEADING_RE.match(masked_line)
         if m and len(m.group(1)) == 1:
             return _HEADING_RE.match(line).group(2).strip()

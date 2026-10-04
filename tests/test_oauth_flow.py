@@ -3,9 +3,8 @@ import hashlib
 import secrets
 from urllib.parse import parse_qs, urlparse
 
-from conftest import BASE, CALLBACK, PASSWORD, STATIC_TOKEN
-
-MCP_HEADERS = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}
+from conftest import BASE, CALLBACK, MCP_HEADERS, PASSWORD, STATIC_TOKEN
+from conftest import call_tool as _call_tool
 
 
 def pkce():
@@ -70,12 +69,8 @@ def full_login(client):
     return client_id, r.json(), q["code"][0], verifier
 
 
-def call_tool(client, token, name="server_info"):
-    return client.post(
-        "/mcp",
-        headers={**MCP_HEADERS, "Authorization": f"Bearer {token}"},
-        json={"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": name, "arguments": {}}},
-    )
+def call_tool(client, token):
+    return _call_tool(client, "server_info", token=token)
 
 
 def test_unauthenticated_mcp_returns_401_with_metadata_pointer(client):
