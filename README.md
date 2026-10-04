@@ -186,9 +186,10 @@ Running on the `ironstrike.de` VPS at **https://vault.ironstrike.de**, as a Dock
 - Compose file rendered at `/var/lib/deployments/Knowledge-Vault-MCP/main/docker-compose.yml`.
 - The knowledge vault repo is bind-mounted read/write from the already-cloned `~/clones/Marks-Knowledge-Vault` checkout into the container at `/data/vault`, instead of having the server clone it over the network via `VAULT_REPO_URL`.
 - OAuth state (`state.db`) and the search index (`index.db`) live in the `kvault-data` named volume.
-- To redeploy after a `git pull`: `cd /var/lib/deployments/Knowledge-Vault-MCP/main && docker compose up -d --build`.
+- The compose file runs the prebuilt image `knowledge-vault-mcp:prod-latest` (no `build:`). To redeploy after a `git pull`: `docker build -t knowledge-vault-mcp:prod-latest ~/clones/Knowledge-Vault-MCP && cd /var/lib/deployments/Knowledge-Vault-MCP/main && docker compose -p knowledge-vault-mcp__main up -d`. Traefik only routes once the health check is green; after a model change allow up to ~3 minutes.
+- The embedding model is cached in the `kvault-data` volume (`/data/models`) and downloaded on first start.
 - Inbox folder is `00-Inbox`. Git push from the container uses a dedicated deploy key at `/var/lib/deployments/Knowledge-Vault-MCP/main/ssh/` (mounted at `/ssh`, wired via `GIT_SSH_COMMAND` in `.env`). Add `ssh/id_ed25519.pub` as a deploy key **with write access** on `MarkDrei/Marks-Knowledge-Vault`, then set `VAULT_GIT_SYNC=true` in `.env` and `docker compose up -d`. Until then writes are committed locally only (push manually from `~/clones/Marks-Knowledge-Vault`).
-- The owner password hash is set in the (git-ignored) `.env` next to that compose file; regenerate a login password with `docker compose run --rm kvault kvault hash-password`.
+- The owner password hash is set in the (git-ignored) `.env` next to that compose file; generate a new hash with `docker compose -p knowledge-vault-mcp__main run --rm -it kvault kvault hash-password` and put it into `OWNER_PASSWORD_HASH` (quote nothing; `$` is not used in the hash).
 
 ## Tech stack
 

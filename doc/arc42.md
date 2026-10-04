@@ -48,14 +48,17 @@ Stakeholder: one owner, who is user, operator and developer.
 
 ```
 knowledge_vault_mcp/
-  cli.py          serve, hash-password (later: reindex)
+  cli.py          serve, hash-password, reindex
   config.py       Settings from env / .env
-  server.py       assembles MCPServer, OAuth routes, /healthz, /login
+  server.py       assembles MCPServer, OAuth routes, /healthz, /login, MCP tools, background sync loop
   auth/           provider (OAuth AS), store (state DB), login page, passwords
-  vault/          (step 2) git sync, Markdown/frontmatter/wikilink parsing, link rewriting
-  index/          (step 3) schema, chunker, embedder, incremental indexer
-  retrieval/      (step 3) BM25 + vector search, RRF, filters
-  tools/          (steps 4–5) MCP tools: search, get_note, get_backlinks, add/update/append/move/delete
+  vault.py        (implemented, simplified) file access, Markdown/frontmatter/wikilink parsing,
+                  git write flow with lock and rollback; move_note/delete_note and
+                  wikilink rewriting still open
+  index.py        (implemented) chunker, FastEmbedder (e5, ONNX), SQLite FTS5 + sqlite-vec index,
+                  incremental sync, RRF search with filters
+  (tools)         defined in server.py: search, get_note, list_notes, get_backlinks,
+                  add_note, append_note, update_note
 ```
 
 | Block | Responsibility |
@@ -63,7 +66,7 @@ knowledge_vault_mcp/
 | auth | Issues and verifies tokens; owner login/consent page. State in `state.db`. |
 | vault | Owns the local clone; the only block that runs `git`. Holds the write lock. |
 | index | Turns changed files into notes, chunks, links, tags and embeddings in `index.db`. |
-| retrieval | Answers queries from `index.db`. Read only. |
+| retrieval | Answers queries from `index.db`. Read only. Currently part of `index.py`. |
 | tools | Thin MCP layer: validates input, calls vault/retrieval, shapes output. |
 
 ## 6. Runtime view
@@ -74,14 +77,16 @@ knowledge_vault_mcp/
 
 **Write (e.g. `add_note`):** acquire write lock → `git pull --rebase` → write file → `git commit` → `git push` → reindex the touched files → release lock. A failed pull or push resets the local branch to its previous state and returns an error.
 
-**Sync:** timer (or webhook) → acquire write lock → `git pull` → diff old..new commit → reindex changed, drop deleted files.
+**Sync:** a background thread (every `SYNC_INTERVAL` s) → `git pull --rebase` (skipped if git sync is off or the tree is dirty) → incremental reindex. Changed files are detected by mtime+size, then content hash, instead of a commit diff, so edits made outside git are picked up as well. Webhooks are not implemented.
 
 ## 7. Deployment view
 
 ```
-VPS ── Caddy (TLS, :443) ──► kvault container/systemd unit (:8000)
-                              └─ /data: state.db, index.db, vault/ (git clone), model cache
+VPS ── Caddy or Traefik (TLS, :443) ──► kvault container/systemd unit (:8000)
+                              └─ /data: state.db, index.db, models/ (embedding cache), vault/ (git clone or bind mount)
 ```
+
+Live instance: `https://vault.ironstrike.de` behind the shared Traefik, vault bind-mounted from the host checkout, git push via a dedicated deploy key (see README, "Live deployment"). The first start downloads the embedding model (~120 MB) into `/data/models`; the container health check therefore has a 180 s start period.
 
 Backup: `state.db` (tokens, clients). `index.db` and `vault/` are rebuildable from the remote repo.
 
