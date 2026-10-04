@@ -57,7 +57,9 @@ knowledge_vault_mcp/
   service.py      wires vault, index and retrieval; background sync thread
   index/          db (schema of index.db), chunker, embedder (fastembed/ONNX), indexer (incremental)
   retrieval/      search: BM25 + vector search, RRF, filters
-  tools/          MCP tools: search, get_note, get_backlinks; (step 5) add/update/append/move/delete
+  writes.py       write transaction (pull → change → commit → push → reindex, reset on failure),
+                  inbox naming/frontmatter, link rewriting for moves
+  tools/          MCP tools: search, get_note, get_backlinks, add/update/append/move/delete_note
 ```
 
 | Block | Responsibility |
@@ -66,7 +68,8 @@ knowledge_vault_mcp/
 | vault | Owns the local clone; the only block that runs `git`. Holds the write lock. |
 | index | Turns changed files into notes, chunks, links, tags and embeddings in `index.db`. |
 | retrieval | Answers queries from `index.db`. Read only. |
-| tools | Thin MCP layer: validates input, calls vault/retrieval, shapes output. |
+| writes | Write operations as git transactions on the vault, under the vault lock. |
+| tools | Thin MCP layer: validates input, calls vault/retrieval/writes, shapes output. |
 
 ## 6. Runtime view
 
@@ -74,7 +77,7 @@ knowledge_vault_mcp/
 
 **Search:** `search` → embed query → FTS5 query and exact vector scan, both with the filters in SQL → RRF → ranked chunks with path, heading path, text, metadata.
 
-**Write (e.g. `add_note`):** acquire write lock → `git pull --rebase` → write file → `git commit` → `git push` → reindex the touched files → release lock. A failed pull or push resets the local branch to its previous state and returns an error.
+**Write (e.g. `add_note`):** acquire write lock → `git pull --rebase` → incremental reindex → write file(s) → `git commit` → `git push` → incremental reindex → release lock. A failed pull or push resets the local branch to the commit before the operation, removes files it created and returns an error.
 
 **Sync:** background thread every `SYNC_INTERVAL` → acquire write lock → `git pull --rebase` → diff indexed commit..HEAD → reindex changed, drop deleted files. On start the same runs once as a full scan; the server already accepts requests meanwhile.
 

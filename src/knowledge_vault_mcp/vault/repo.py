@@ -141,6 +141,9 @@ class GitRepo:
                 self.run("rebase", "--abort")
             raise
 
+    def has_changes(self, paths: list[str]) -> bool:
+        return bool(paths) and bool(self.run("status", "--porcelain", "--", *paths).strip())
+
     def commit(self, paths: list[str], message: str) -> str:
         self.run("add", "-A", "--", *paths)
         self.run("commit", "-m", message, "--", *paths)

@@ -2,6 +2,7 @@
 
 from contextlib import asynccontextmanager
 
+from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions, RevocationOptions
 from mcp.server.mcpserver import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
@@ -56,7 +57,15 @@ def build_mcp(settings: Settings, store: StateStore, service: VaultService) -> M
             "index": service.status(),
         }
 
-    register_tools(mcp, service)
+    def caller() -> str:
+        """Name of the OAuth client behind the current request, e.g. "Claude"."""
+        token = get_access_token()
+        if token is None:
+            return "unknown"
+        client = store.get_client(token.client_id)
+        return (client or {}).get("client_name") or token.client_id
+
+    register_tools(mcp, service, caller)
 
     @mcp.custom_route("/healthz", methods=["GET"])
     async def healthz(request: Request) -> Response:
