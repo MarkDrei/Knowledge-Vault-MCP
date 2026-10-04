@@ -87,11 +87,11 @@ knowledge_vault_mcp/
 ## 7. Deployment view
 
 ```
-VPS ── Caddy (TLS, :443) ──► kvault container/systemd unit (:8000)
-                              └─ /data: state.db, index.db, vault/ (git clone), models/ (model cache)
+VPS ── Caddy or Traefik (TLS, :443) ──► kvault container/systemd unit (:8000)
+                              └─ /data: state.db, index.db, vault/ (git clone or bind mount), models/ (model cache)
 ```
 
-Backup: `state.db` (tokens, clients) via `kvault backup`. `index.db`, `vault/` and `models/` are rebuildable from the remote repo and Hugging Face. Step-by-step setup (deploy key, Docker or systemd, proxy, cron backup, monitoring): [deployment.md](deployment.md).
+Backup: `state.db` (tokens, clients) via `kvault backup`. `index.db`, `vault/` and `models/` are rebuildable from the remote repo and Hugging Face. Step-by-step setup (deploy key, Docker or systemd, proxy, cron backup, monitoring): [deployment.md](deployment.md). Live instance: `https://vault.ironstrike.de` behind the shared Traefik, vault bind-mounted from the host checkout.
 
 ## 8. Cross-cutting concepts
 

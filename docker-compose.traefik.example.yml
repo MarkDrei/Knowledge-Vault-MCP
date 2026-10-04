@@ -1,0 +1,35 @@
+# Example deployment behind an already-running Traefik v3 reverse proxy
+# (e.g. the shared Traefik instance used by other projects on the same VPS).
+# Copy to docker-compose.yml, fill .env, and adjust VAULT_HOST_PATH / domain.
+#
+# Prerequisites on the host:
+#   - An external Docker network named "web" that Traefik is attached to.
+#   - Traefik configured with a "websecure" entrypoint and a certresolver named "le"
+#     (see MarkDrei/Knowledge-Vault-MCP README or the shared infra repo for details).
+services:
+  kvault:
+    build: .
+    env_file: .env
+    environment:
+      FORWARDED_ALLOW_IPS: "*"   # only Traefik can reach this container
+    volumes:
+      - kvault-data:/data
+      # Bind-mount an already-cloned vault repo instead of letting the server
+      # clone it itself (handy when the vault repo lives locally on the VPS).
+      - ${VAULT_HOST_PATH:-../Marks-Knowledge-Vault}:/data/vault
+    networks:
+      - web
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.kvault.rule=Host(`${PUBLIC_HOST:-vault.example.com}`)"
+      - "traefik.http.routers.kvault.entrypoints=websecure"
+      - "traefik.http.routers.kvault.tls.certresolver=le"
+      - "traefik.http.services.kvault.loadbalancer.server.port=8000"
+
+networks:
+  web:
+    external: true
+
+volumes:
+  kvault-data:
