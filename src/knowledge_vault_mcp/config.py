@@ -25,10 +25,13 @@ class Settings(BaseSettings):
     # Exact redirect URIs accepted at client registration; loopback URIs are always accepted.
     oauth_redirect_uris: list[str] = ["https://claude.ai/api/mcp/auth_callback"]
 
-    # Vault and index (roadmap step 2+)
+    # Vault (git clone). Without VAULT_REPO_URL the server uses a local repository at VAULT_PATH.
     vault_repo_url: str | None = None
     vault_branch: str = "main"
     vault_path: Path = Path("./data/vault")
+    vault_ssh_key: Path | None = None  # deploy key for an SSH remote
+    git_author_name: str = "Knowledge Vault MCP"
+    git_author_email: str = "kvault@localhost"
     inbox_dir: str = "_inbox"
     timezone: str = "Europe/Berlin"
     db_path: Path = Path("./data/index.db")
@@ -45,7 +48,7 @@ class Settings(BaseSettings):
             raise ValueError("PUBLIC_URL must use https unless it is localhost")
         return v.rstrip("/")
 
-    @field_validator("auth_token", "owner_password_hash", mode="before")
+    @field_validator("auth_token", "owner_password_hash", "vault_repo_url", "vault_ssh_key", mode="before")
     @classmethod
     def _empty_is_none(cls, v: object) -> object:
         return None if v == "" else v
