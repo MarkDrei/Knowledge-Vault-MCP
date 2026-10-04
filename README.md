@@ -2,7 +2,7 @@
 
 A self-hosted [MCP](https://modelcontextprotocol.io) server that exposes a git-backed, Obsidian-style knowledge vault for **hybrid retrieval (RAG)** and **safe capture of new knowledge**. It runs entirely locally on a small VPS.
 
-> Status: roadmap step 1 (skeleton with OAuth) implemented. This README is the source of truth for scope; architecture and decisions are in [doc/arc42.md](doc/arc42.md) and [doc/adr/](doc/adr/).
+> Status: roadmap steps 1–2 (skeleton with OAuth, vault clone/sync and parsing) implemented. This README is the source of truth for scope; architecture and decisions are in [doc/arc42.md](doc/arc42.md) and [doc/adr/](doc/adr/).
 
 ## Goal
 
@@ -30,10 +30,12 @@ The indexer understands:
 |---|---|
 | Markdown notes | Chunked by heading structure, with the heading path kept as context |
 | Frontmatter (YAML) | Stored as filterable metadata |
-| `#tags` and frontmatter tags | Stored and filterable |
-| `[[wikilinks]]` (incl. aliases, headings) | Parsed into a link graph; powers backlinks |
+| `#tags` and frontmatter tags | Stored lowercased and filterable; tags and links inside code are ignored |
+| `[[wikilinks]]` (incl. aliases, headings) | Parsed into a link graph; powers backlinks. Resolved like Obsidian: by file name, or by path suffix for `[[Folder/Note]]`, case-insensitive; ambiguous names go to the shortest path |
 | PDF, DOCX, HTML | Text extracted and indexed, tied to the file path |
 | Images and other attachments | Not indexed; kept in the repo and resolved from embeds like `![[img.png]]` |
+
+`.git/`, `.obsidian/` and `.trash/` are ignored.
 
 ## Architecture
 
@@ -146,7 +148,7 @@ Environment variables or a `.env` file (see [.env.example](.env.example)), no se
 - `PUBLIC_URL` (external base URL; MCP endpoint is `PUBLIC_URL/mcp`), `HOST`, `PORT`, `FORWARDED_ALLOW_IPS`
 - `OWNER_PASSWORD_HASH` (from `kvault hash-password`), optional `AUTH_TOKEN`
 - `STATE_DB_PATH` (OAuth state, back it up), `DB_PATH` (search index, rebuildable)
-- `VAULT_REPO_URL`, `VAULT_BRANCH`, `VAULT_PATH` (clone location), git credentials (deploy key)
+- `VAULT_REPO_URL`, `VAULT_BRANCH`, `VAULT_PATH` (clone location), `VAULT_SSH_KEY` (deploy key for an SSH remote), `GIT_AUTHOR_NAME` / `GIT_AUTHOR_EMAIL` (identity of server commits). Without `VAULT_REPO_URL` the server uses (or creates) a local repository at `VAULT_PATH` and never pushes.
 - `INBOX_DIR` (default `_inbox`), `TIMEZONE`
 - `EMBEDDING_MODEL`, `SYNC_INTERVAL`
 
@@ -184,7 +186,7 @@ A single small VPS (2-4 vCPU, 4-8 GB RAM, CPU only), vault size under ~10k notes
 ## Roadmap
 
 1. **Skeleton:** project layout, config, HTTP MCP server with OAuth, health check. *(done)*
-2. **Vault:** clone/sync, Markdown + frontmatter + wikilink parsing, SQLite schema.
+2. **Vault:** clone/sync, Markdown + frontmatter + wikilink parsing, SQLite schema. *(done)*
 3. **Index and search:** chunking, local embeddings, hybrid search with RRF, incremental reindex.
 4. **Read tools:** `get_note`, `get_backlinks`.
 5. **Write tools:** `add_note` with inbox naming/metadata, edit tools, pull-rebase-push flow.

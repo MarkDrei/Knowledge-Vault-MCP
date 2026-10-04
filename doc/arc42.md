@@ -52,8 +52,9 @@ knowledge_vault_mcp/
   config.py       Settings from env / .env
   server.py       assembles MCPServer, OAuth routes, /healthz, /login
   auth/           provider (OAuth AS), store (state DB), login page, passwords
-  vault/          (step 2) git sync, Markdown/frontmatter/wikilink parsing, link rewriting
-  index/          (step 3) schema, chunker, embedder, incremental indexer
+  vault/          repo (git binary), vault (clone, lock, sync), paths, markdown (frontmatter, tags,
+                  wikilinks, link rewriting), links (Obsidian link resolution)
+  index/          db (schema of index.db); (step 3) chunker, embedder, incremental indexer
   retrieval/      (step 3) BM25 + vector search, RRF, filters
   tools/          (steps 4–5) MCP tools: search, get_note, get_backlinks, add/update/append/move/delete
 ```
