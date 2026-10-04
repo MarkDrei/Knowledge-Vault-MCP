@@ -34,9 +34,14 @@ class Settings(BaseSettings):
     git_author_email: str = "kvault@localhost"
     inbox_dir: str = "_inbox"
     timezone: str = "Europe/Berlin"
+
+    # Index and search
     db_path: Path = Path("./data/index.db")
-    embedding_model: str = "intfloat/multilingual-e5-small"
-    sync_interval: int = 300
+    embedding_model: str = "intfloat/multilingual-e5-small"  # "hash" = no model, tests only
+    model_cache_dir: Path = Path("./data/models")
+    chunk_max_chars: int = 1500
+    chunk_overlap: int = 150
+    sync_interval: int = 300  # seconds between `git pull` + incremental reindex; 0 disables
 
     @field_validator("public_url")
     @classmethod

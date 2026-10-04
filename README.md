@@ -2,7 +2,7 @@
 
 A self-hosted [MCP](https://modelcontextprotocol.io) server that exposes a git-backed, Obsidian-style knowledge vault for **hybrid retrieval (RAG)** and **safe capture of new knowledge**. It runs entirely locally on a small VPS.
 
-> Status: roadmap steps 1–2 (skeleton with OAuth, vault clone/sync and parsing) implemented. This README is the source of truth for scope; architecture and decisions are in [doc/arc42.md](doc/arc42.md) and [doc/adr/](doc/adr/).
+> Status: roadmap steps 1–3 (skeleton with OAuth, vault clone/sync and parsing, index and hybrid search) implemented. This README is the source of truth for scope; architecture and decisions are in [doc/arc42.md](doc/arc42.md) and [doc/adr/](doc/adr/).
 
 ## Goal
 
@@ -69,18 +69,21 @@ A single SQLite database: FTS5 for BM25 keyword search, `sqlite-vec` for vector 
 
 ### Retrieval
 
-1. Query is run against FTS5 (BM25) and against the vector index.
-2. Results are fused (Reciprocal Rank Fusion) into one ranked list.
-3. Optional filters: path prefix, tags, frontmatter fields (e.g. `status`), date range.
-4. Each hit returns path, heading path, score, snippet, and note metadata.
+1. Query is run against FTS5 (BM25, title and headings weighted higher than text) and against the vectors (exact cosine scan with sqlite-vec).
+2. Results are fused (Reciprocal Rank Fusion, `k = 60`) into one ranked list.
+3. Optional filters, applied inside both queries: path prefix, tags (all must match; `infra` also matches `infra/vps`), `status`, `include_inbox`, last-modified range (time of the last commit touching the file).
+4. Each hit returns path, title, heading path, the chunk text, score, whether it matched by keyword, semantically or both, and note metadata.
 
-Embeddings are computed locally on CPU with a small **multilingual model** suited to German and English. Default: `intfloat/multilingual-e5-small` (384 dims, see [ADR-0004](doc/adr/0004-embedding-model-multilingual-e5-small.md)); to be confirmed by a benchmark on a real German/English sample. No network calls at query or index time.
+**Chunking.** Notes are split at headings; each chunk keeps its heading path (`Note > Section > Subsection`) as context for the embedding. Sections longer than `CHUNK_MAX_CHARS` (default 1500, well below the 512-token limit of e5) are split at paragraph, sentence or word boundaries with `CHUNK_OVERLAP` (default 150) characters of overlap. The defaults are to be validated with the evaluation set.
+
+Embeddings are computed locally on CPU with a small **multilingual model** suited to German and English. Default: `intfloat/multilingual-e5-small` (384 dims, see [ADR-0004](doc/adr/0004-embedding-model-multilingual-e5-small.md)); to be confirmed by a benchmark on a real German/English sample. The model runs as ONNX via fastembed, without PyTorch ([ADR-0009](doc/adr/0009-onnx-embeddings-fastembed.md)). It is downloaded once from Hugging Face into `MODEL_CACHE_DIR`; afterwards there are no network calls at query or index time.
 
 ### Sync and indexing
 
-- The server clones the vault repo on first start.
-- A periodic `git pull` (and optionally a webhook) triggers an **incremental** reindex: diff the old and new commit, re-parse and re-embed only changed files, drop deleted ones.
-- A full reindex is available as a CLI command for model changes or recovery.
+- The server clones the vault repo on first start and builds the index in the background; the MCP endpoint is available immediately (search notes that the index is incomplete until the first run finishes).
+- Every `SYNC_INTERVAL` seconds a `git pull` triggers an **incremental** reindex: diff the indexed commit against the new HEAD, re-parse and re-embed only changed files, drop deleted ones. Files with an unchanged content hash are not re-embedded.
+- A full rescan happens automatically on first start, after rewritten history and when `EMBEDDING_MODEL` changes. `kvault reindex [--full]` does the same from the command line; `kvault search "query"` queries the index for debugging.
+- Only committed content is indexed: edit the vault through git (Obsidian Git plugin, the write tools), not by changing files in the server's clone.
 
 ## MCP tools (v1)
 
@@ -150,7 +153,7 @@ Environment variables or a `.env` file (see [.env.example](.env.example)), no se
 - `STATE_DB_PATH` (OAuth state, back it up), `DB_PATH` (search index, rebuildable)
 - `VAULT_REPO_URL`, `VAULT_BRANCH`, `VAULT_PATH` (clone location), `VAULT_SSH_KEY` (deploy key for an SSH remote), `GIT_AUTHOR_NAME` / `GIT_AUTHOR_EMAIL` (identity of server commits). Without `VAULT_REPO_URL` the server uses (or creates) a local repository at `VAULT_PATH` and never pushes.
 - `INBOX_DIR` (default `_inbox`), `TIMEZONE`
-- `EMBEDDING_MODEL`, `SYNC_INTERVAL`
+- `DB_PATH`, `EMBEDDING_MODEL` (`hash` = no model, for tests only), `MODEL_CACHE_DIR`, `CHUNK_MAX_CHARS`, `CHUNK_OVERLAP`, `SYNC_INTERVAL` (seconds, `0` disables periodic sync)
 
 ## Development
 
@@ -179,7 +182,7 @@ A single small VPS (2-4 vCPU, 4-8 GB RAM, CPU only), vault size under ~10k notes
 
 - Python, official MCP SDK
 - SQLite (FTS5 + sqlite-vec)
-- Local embedding model on CPU (multilingual, German + English)
+- Local embedding model on CPU (multilingual, German + English) via fastembed / ONNX Runtime
 - Git via the system `git` binary
 - Document extraction for PDF/DOCX/HTML (library TBD)
 
@@ -187,7 +190,7 @@ A single small VPS (2-4 vCPU, 4-8 GB RAM, CPU only), vault size under ~10k notes
 
 1. **Skeleton:** project layout, config, HTTP MCP server with OAuth, health check. *(done)*
 2. **Vault:** clone/sync, Markdown + frontmatter + wikilink parsing, SQLite schema. *(done)*
-3. **Index and search:** chunking, local embeddings, hybrid search with RRF, incremental reindex.
+3. **Index and search:** chunking, local embeddings, hybrid search with RRF, incremental reindex. *(done)*
 4. **Read tools:** `get_note`, `get_backlinks`.
 5. **Write tools:** `add_note` with inbox naming/metadata, edit tools, pull-rebase-push flow.
 6. **Documents:** PDF/DOCX/HTML text extraction in the indexer.
@@ -195,10 +198,12 @@ A single small VPS (2-4 vCPU, 4-8 GB RAM, CPU only), vault size under ~10k notes
 
 ## Open questions
 
+Decided: inbox notes are included in search by default; `include_inbox=false` excludes them.
+
+
 - Confirm the embedding model by benchmark (real notes, CPU latency and RAM).
-- Should inbox notes be included in search by default, or excluded unless requested? (Proposal: included, with an `include_inbox` flag.)
 - Webhook vs. polling for sync; which git host will deliver webhooks.
-- Chunk size and overlap defaults.
+- Chunk size and overlap: defaults set (1500/150 characters), to be confirmed with the evaluation set.
 
 ## License
 

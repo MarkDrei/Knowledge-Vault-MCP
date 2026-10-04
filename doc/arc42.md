@@ -48,15 +48,16 @@ Stakeholder: one owner, who is user, operator and developer.
 
 ```
 knowledge_vault_mcp/
-  cli.py          serve, hash-password (later: reindex)
+  cli.py          serve, hash-password, reindex, search
   config.py       Settings from env / .env
   server.py       assembles MCPServer, OAuth routes, /healthz, /login
   auth/           provider (OAuth AS), store (state DB), login page, passwords
   vault/          repo (git binary), vault (clone, lock, sync), paths, markdown (frontmatter, tags,
                   wikilinks, link rewriting), links (Obsidian link resolution)
-  index/          db (schema of index.db); (step 3) chunker, embedder, incremental indexer
-  retrieval/      (step 3) BM25 + vector search, RRF, filters
-  tools/          (steps 4–5) MCP tools: search, get_note, get_backlinks, add/update/append/move/delete
+  service.py      wires vault, index and retrieval; background sync thread
+  index/          db (schema of index.db), chunker, embedder (fastembed/ONNX), indexer (incremental)
+  retrieval/      search: BM25 + vector search, RRF, filters
+  tools/          MCP tools: search; (steps 4–5) get_note, get_backlinks, add/update/append/move/delete
 ```
 
 | Block | Responsibility |
@@ -71,17 +72,17 @@ knowledge_vault_mcp/
 
 **Connecting Claude mobile (once):** client calls `/mcp` → `401` + `resource_metadata` → reads protected-resource and authorization-server metadata → registers via `/register` (DCR) → `/authorize` with PKCE → server redirects to `/login` → owner enters password → code → `/token` → access + refresh token. Refresh tokens rotate on use.
 
-**Search:** `search` → FTS5 query and vector query in parallel → RRF → filters → ranked chunks with path, heading path, snippet, metadata.
+**Search:** `search` → embed query → FTS5 query and exact vector scan, both with the filters in SQL → RRF → ranked chunks with path, heading path, text, metadata.
 
 **Write (e.g. `add_note`):** acquire write lock → `git pull --rebase` → write file → `git commit` → `git push` → reindex the touched files → release lock. A failed pull or push resets the local branch to its previous state and returns an error.
 
-**Sync:** timer (or webhook) → acquire write lock → `git pull` → diff old..new commit → reindex changed, drop deleted files.
+**Sync:** background thread every `SYNC_INTERVAL` → acquire write lock → `git pull --rebase` → diff indexed commit..HEAD → reindex changed, drop deleted files. On start the same runs once as a full scan; the server already accepts requests meanwhile.
 
 ## 7. Deployment view
 
 ```
 VPS ── Caddy (TLS, :443) ──► kvault container/systemd unit (:8000)
-                              └─ /data: state.db, index.db, vault/ (git clone), model cache
+                              └─ /data: state.db, index.db, vault/ (git clone), models/ (model cache)
 ```
 
 Backup: `state.db` (tokens, clients). `index.db` and `vault/` are rebuildable from the remote repo.
@@ -105,6 +106,7 @@ See [adr/](adr/):
 6. [Git write flow and edit scope](adr/0006-git-write-flow.md)
 7. [Hybrid retrieval with RRF, no reranker](adr/0007-hybrid-retrieval-rrf.md)
 8. [Stateless Streamable HTTP](adr/0008-stateless-http.md)
+9. [ONNX embeddings via fastembed](adr/0009-onnx-embeddings-fastembed.md)
 
 ## 10. Quality scenarios
 

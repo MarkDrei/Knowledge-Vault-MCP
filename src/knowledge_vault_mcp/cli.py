@@ -1,7 +1,9 @@
-"""Command line entry point: `kvault serve`, `kvault hash-password`."""
+"""Command line entry point: `kvault serve | hash-password | reindex | search`."""
 
 import argparse
 import getpass
+import json
+import logging
 import sys
 
 from knowledge_vault_mcp import __version__
@@ -44,6 +46,35 @@ def _hash_password(args: argparse.Namespace) -> int:
     return 0
 
 
+def _reindex(args: argparse.Namespace) -> int:
+    from dataclasses import asdict
+
+    from knowledge_vault_mcp.config import Settings
+    from knowledge_vault_mcp.service import VaultService
+
+    service = VaultService(Settings())
+    service.vault.open()
+    if not args.no_pull:
+        service.vault.sync()
+    stats = service.indexer.update(force_full=args.full)
+    print(json.dumps(asdict(stats)))
+    return 1 if stats.failed else 0
+
+
+def _search(args: argparse.Namespace) -> int:
+    from knowledge_vault_mcp.config import Settings
+    from knowledge_vault_mcp.retrieval.search import SearchFilters
+    from knowledge_vault_mcp.service import VaultService
+
+    service = VaultService(Settings())
+    filters = SearchFilters(tags=args.tag or [], path_prefix=args.path)
+    for hit in service.retriever.search(args.query, args.limit, filters, mode=args.mode):
+        heading = " > ".join(hit.headings)
+        print(f"{hit.score:.4f}  [{hit.match}]  {hit.path}  {heading}")
+        print("        " + hit.text[:160].replace("\n", " "))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="kvault", description="Knowledge-Vault-MCP server")
     parser.add_argument("--version", action="version", version=__version__)
@@ -54,7 +85,19 @@ def main(argv: list[str] | None = None) -> int:
     serve.set_defaults(func=_serve)
     hp = sub.add_parser("hash-password", help="print a hash for OWNER_PASSWORD_HASH")
     hp.set_defaults(func=_hash_password)
+    ri = sub.add_parser("reindex", help="pull and bring the search index up to date")
+    ri.add_argument("--full", action="store_true", help="re-scan every file (also after deleting index.db)")
+    ri.add_argument("--no-pull", action="store_true", help="index the local clone without pulling")
+    ri.set_defaults(func=_reindex)
+    se = sub.add_parser("search", help="query the index from the command line")
+    se.add_argument("query")
+    se.add_argument("--limit", type=int, default=8)
+    se.add_argument("--tag", action="append")
+    se.add_argument("--path")
+    se.add_argument("--mode", choices=["hybrid", "keyword", "semantic"], default="hybrid")
+    se.set_defaults(func=_search)
     args = parser.parse_args(argv)
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     return args.func(args)
 
 
