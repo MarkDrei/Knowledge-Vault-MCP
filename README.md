@@ -2,7 +2,7 @@
 
 A self-hosted [MCP](https://modelcontextprotocol.io) server that exposes a git-backed, Obsidian-style knowledge vault for **hybrid retrieval (RAG)** and **safe capture of new knowledge**. It runs entirely locally on a small VPS.
 
-> Status: roadmap step 1 (skeleton with OAuth) done; a first, simplified vault tool set (keyword search, read, add/append/update) is live. Semantic search, `move_note`/`delete_note` and document extraction are still open. This README is the source of truth for scope; architecture and decisions are in [doc/arc42.md](doc/arc42.md) and [doc/adr/](doc/adr/).
+> Status: roadmap step 1 (skeleton with OAuth) done; hybrid search (BM25 + multilingual embeddings, RRF), read tools and add/append/update are live (roadmap steps 3-4 done, 5 partly). `move_note`/`delete_note` and document extraction are still open. This README is the source of truth for scope; architecture and decisions are in [doc/arc42.md](doc/arc42.md) and [doc/adr/](doc/adr/).
 
 ## Goal
 
@@ -82,7 +82,9 @@ Embeddings are computed locally on CPU with a small **multilingual model** suite
 
 ## MCP tools (v1)
 
-**Implemented today** (`src/knowledge_vault_mcp/vault.py`): `server_info`, `search` (keyword/BM25 via in-memory SQLite FTS5, rebuilt when files change; params `query`, `limit`, `path_prefix`, `tag`), `get_note`, `list_notes`, `get_backlinks`, `add_note`, `append_note`, `update_note`. Writes follow the safety flow below and refuse to run on a dirty working tree. Set `VAULT_GIT_SYNC=false` to commit locally without pull/push. Not yet implemented: semantic/hybrid search, `move_note`, `delete_note`, date filters.
+**Implemented today**: `server_info`, `search`, `get_note`, `list_notes`, `get_backlinks`, `add_note`, `append_note`, `update_note`. Writes follow the safety flow below, refuse to run on a dirty working tree and reindex immediately. Set `VAULT_GIT_SYNC=false` to commit locally without pull/push. Not yet implemented: `move_note`, `delete_note`, date filters, PDF/DOCX/HTML.
+
+**Search implementation** (`src/knowledge_vault_mcp/index.py`): notes are split by heading structure (long sections on paragraph boundaries, max ~1200 chars; the heading path is stored and embedded as context). Each chunk goes into SQLite (`DB_PATH`): FTS5 for BM25 and `sqlite-vec` for vectors from `EMBEDDING_MODEL` (default `intfloat/multilingual-e5-small`, run on CPU via `fastembed`/ONNX with the `query:`/`passage:` prefixes; downloaded once into `MODEL_CACHE_PATH`). Both top-100 lists are fused with Reciprocal Rank Fusion (k=60). Filters: `path_prefix`, `tag`, `status`. Each hit reports `matched_by` (`keyword`/`semantic`). The index updates incrementally (file mtime+size, then content hash) after every write, after each periodic `git pull` (`SYNC_INTERVAL` seconds) and on search; changing the model rebuilds it automatically, `kvault reindex` forces a rebuild. If the model cannot be loaded or `EMBEDDINGS_ENABLED=false`, search falls back to keyword only.
 
 Planned design:
 
@@ -152,7 +154,7 @@ Environment variables or a `.env` file (see [.env.example](.env.example)), no se
 - `STATE_DB_PATH` (OAuth state, back it up), `DB_PATH` (search index, rebuildable)
 - `VAULT_REPO_URL`, `VAULT_BRANCH`, `VAULT_PATH` (clone location), git credentials (deploy key)
 - `INBOX_DIR` (default `_inbox`; `00-Inbox` for the live vault), `TIMEZONE`, `VAULT_GIT_SYNC` (default `true`)
-- `EMBEDDING_MODEL`, `SYNC_INTERVAL`
+- `EMBEDDING_MODEL`, `EMBEDDINGS_ENABLED` (default `true`), `MODEL_CACHE_PATH`, `SYNC_INTERVAL`
 
 ## Development
 
@@ -199,10 +201,10 @@ Running on the `ironstrike.de` VPS at **https://vault.ironstrike.de**, as a Dock
 ## Roadmap
 
 1. **Skeleton:** project layout, config, HTTP MCP server with OAuth, health check. *(done)*
-2. **Vault:** clone/sync, Markdown + frontmatter + wikilink parsing, SQLite schema.
-3. **Index and search:** chunking, local embeddings, hybrid search with RRF, incremental reindex.
-4. **Read tools:** `get_note`, `get_backlinks`.
-5. **Write tools:** `add_note` with inbox naming/metadata, edit tools, pull-rebase-push flow.
+2. **Vault:** Markdown + frontmatter + wikilink parsing, SQLite schema, periodic pull. *(done; initial clone by the server is not implemented, the vault must already be present at `VAULT_PATH`)*
+3. **Index and search:** chunking, local embeddings, hybrid search with RRF, incremental reindex. *(done; benchmark of the model choice and a retrieval evaluation set are still open)*
+4. **Read tools:** `get_note`, `get_backlinks`. *(done)*
+5. **Write tools:** `add_note` with inbox naming/metadata, edit tools, pull-rebase-push flow. *(add/append/update done; move/delete open)*
 6. **Documents:** PDF/DOCX/HTML text extraction in the indexer.
 7. **Hardening:** deployment docs, backups, evaluation set for retrieval quality (German + English).
 

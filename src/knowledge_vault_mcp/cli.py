@@ -1,4 +1,4 @@
-"""Command line entry point: `kvault serve`, `kvault hash-password`."""
+"""Command line entry point: `kvault serve`, `kvault hash-password`, `kvault reindex`."""
 
 import argparse
 import getpass
@@ -44,6 +44,16 @@ def _hash_password(args: argparse.Namespace) -> int:
     return 0
 
 
+def _reindex(args: argparse.Namespace) -> int:
+    from knowledge_vault_mcp.config import Settings
+    from knowledge_vault_mcp.server import make_vault
+
+    vault = make_vault(Settings())
+    vault.indexer.reset()
+    print(vault.sync_index())
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="kvault", description="Knowledge-Vault-MCP server")
     parser.add_argument("--version", action="version", version=__version__)
@@ -54,6 +64,8 @@ def main(argv: list[str] | None = None) -> int:
     serve.set_defaults(func=_serve)
     hp = sub.add_parser("hash-password", help="print a hash for OWNER_PASSWORD_HASH")
     hp.set_defaults(func=_hash_password)
+    ri = sub.add_parser("reindex", help="drop and rebuild the search index")
+    ri.set_defaults(func=_reindex)
     args = parser.parse_args(argv)
     return args.func(args)
 

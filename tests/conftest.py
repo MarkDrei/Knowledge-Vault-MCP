@@ -24,6 +24,9 @@ def settings(tmp_path, password_hash) -> Settings:
         owner_password_hash=password_hash,
         auth_token=STATIC_TOKEN,
         state_db_path=tmp_path / "state.db",
+        db_path=tmp_path / "index.db",
+        vault_path=tmp_path / "vault",
+        embeddings_enabled=False,
     )
 
 

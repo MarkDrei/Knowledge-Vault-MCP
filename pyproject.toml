@@ -8,6 +8,8 @@ dependencies = [
     "mcp>=2.3,<3",
     "pydantic-settings>=2.6",
     "uvicorn>=0.30",
+    "fastembed>=0.7",
+    "sqlite-vec>=0.1.6",
 ]
 
 [project.scripts]

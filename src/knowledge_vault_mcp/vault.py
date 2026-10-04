@@ -1,12 +1,12 @@
 """Read/search/write access to a git-backed Markdown vault.
 
-Search is keyword-only (SQLite FTS5, BM25) for now; semantic search is a later roadmap step.
+Search is hybrid (BM25 + embeddings, fused with RRF) via `index.Indexer`.
 All writes run under one lock and follow ADR-0006: pull --rebase, change, commit, push; on any
 failure the local branch is reset to its previous state.
 """
 
+import logging
 import re
-import sqlite3
 import subprocess  # noqa: S404
 import threading
 import unicodedata
@@ -15,6 +15,9 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from knowledge_vault_mcp.index import Embedder, Indexer
+
+log = logging.getLogger(__name__)
 HIDDEN_DIRS = {".git", ".obsidian", ".trash"}
 WIKILINK_RE = re.compile(r"\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|[^\]]*)?\]\]")
 INLINE_TAG_RE = re.compile(r"(?<![\w/])#([A-Za-z][\w/-]*)")
@@ -33,6 +36,7 @@ class Note:
     raw: str
     tags: list[str]
     links: list[str]
+    status: str = ""
 
 
 def split_frontmatter(raw: str) -> tuple[dict[str, str], str]:
@@ -72,11 +76,6 @@ def slugify(text: str) -> str:
     return text[:60] or "note"
 
 
-def fts_query(query: str) -> str:
-    words = re.findall(r"\w+", query, flags=re.UNICODE)
-    return " OR ".join(f'"{w}"*' for w in words)
-
-
 class Vault:
     def __init__(
         self,
@@ -85,6 +84,8 @@ class Vault:
         timezone: str = "Europe/Berlin",
         git_sync: bool = True,
         branch: str = "main",
+        db_path: Path | str = ":memory:",
+        embedder: Embedder | None = None,
     ):
         self.root = Path(path).resolve()
         self.inbox_dir = inbox_dir.strip("/")
@@ -92,8 +93,7 @@ class Vault:
         self.git_sync = git_sync
         self.branch = branch
         self._lock = threading.RLock()
-        self._index: sqlite3.Connection | None = None
-        self._signature: tuple | None = None
+        self.indexer = Indexer(db_path, embedder)
 
     @property
     def available(self) -> bool:
@@ -128,7 +128,7 @@ class Vault:
             m = re.search(r"^#\s+(.*)$", body, re.MULTILINE)
             title = m.group(1).strip() if m else p.stem
         links = sorted({m.strip() for m in WIKILINK_RE.findall(body)})
-        return Note(self._rel(p), title, body, raw, parse_tags(meta, body), links)
+        return Note(self._rel(p), title, body, raw, parse_tags(meta, body), links, meta.get("status", ""))
 
     def get_note(self, path: str) -> Note:
         p = self._resolve(path)
@@ -160,48 +160,42 @@ class Vault:
         return result
 
     # ---- search ------------------------------------------------------------------------------
-    def _ensure_index(self) -> sqlite3.Connection:
-        files = self._files()
-        sig = tuple((str(p), p.stat().st_mtime_ns) for p in files)
-        if self._index is not None and sig == self._signature:
-            return self._index
-        db = sqlite3.connect(":memory:", check_same_thread=False)
-        db.execute(
-            "CREATE VIRTUAL TABLE notes USING fts5(path UNINDEXED, title, tags, body, "
-            "tokenize='unicode61 remove_diacritics 2')"
-        )
-        for p in files:
-            n = self._load(p)
-            db.execute("INSERT INTO notes VALUES (?, ?, ?, ?)", (n.path, n.title, " ".join(n.tags), n.body))
-        db.commit()
-        if self._index is not None:
-            self._index.close()
-        self._index, self._signature = db, sig
-        return db
+    def sync_index(self) -> dict:
+        """Bring the index in line with the files on disk (incremental)."""
 
-    def search(self, query: str, limit: int = 10, path_prefix: str = "", tag: str = "") -> list[dict]:
-        q = fts_query(query)
-        if not q:
-            return []
+        def entry(p: Path):
+            st = p.stat()
+
+            def load():
+                n = self._load(p)
+                return n.raw, n.title, n.tags, n.status, n.body
+
+            return self._rel(p), f"{st.st_mtime_ns}:{st.st_size}", load
+
         with self._lock:
-            db = self._ensure_index()
-            rows = db.execute(
-                "SELECT path, title, tags, snippet(notes, 3, '[', ']', ' … ', 24), bm25(notes, 0, 5, 3, 1) "
-                "FROM notes WHERE notes MATCH ? ORDER BY 5 LIMIT 200",
-                (q,),
-            ).fetchall()
-        hits = []
-        for path, title, tags, snippet, score in rows:
-            if path_prefix and not path.startswith(path_prefix.lstrip("/")):
-                continue
-            if tag and tag.lstrip("#") not in tags.split():
-                continue
-            hits.append(
-                {"path": path, "title": title, "tags": tags.split(), "snippet": snippet, "score": -score}
-            )
-            if len(hits) >= limit:
-                break
-        return hits
+            return self.indexer.sync([entry(p) for p in self._files()])
+
+    def search(
+        self, query: str, limit: int = 10, path_prefix: str = "", tag: str = "", status: str = ""
+    ) -> list[dict]:
+        self.sync_index()
+        return self.indexer.search(query, limit, path_prefix, tag, status)
+
+    def pull(self) -> None:
+        """Fetch remote changes (used by the periodic sync); no-op if git sync is off or tree is dirty."""
+        if not self.git_sync:
+            return
+        with self._lock:
+            if self._git("status", "--porcelain"):
+                log.warning("Vault has uncommitted changes; skipping pull")
+                return
+            try:
+                self._git("pull", "--rebase", "origin", self.branch)
+            except VaultError:
+                subprocess.run(
+                    ["git", "-C", str(self.root), "rebase", "--abort"], check=False, capture_output=True
+                )
+                raise
 
     # ---- writing -----------------------------------------------------------------------------
     def _git(self, *args: str) -> str:
@@ -241,7 +235,10 @@ class Vault:
                 )  # noqa: S603, S607
                 self._git("reset", "--hard", before)
                 raise
-            self._signature = None
+            try:
+                self.sync_index()
+            except Exception:
+                log.exception("Reindex after write failed; it will be retried on the next search")
 
     def add_note(
         self,

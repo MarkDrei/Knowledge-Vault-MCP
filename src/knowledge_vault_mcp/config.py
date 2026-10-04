@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     inbox_dir: str = "_inbox"
     timezone: str = "Europe/Berlin"
     db_path: Path = Path("./data/index.db")
+    model_cache_path: Path = Path("./data/models")
+    embeddings_enabled: bool = True
     embedding_model: str = "intfloat/multilingual-e5-small"
     sync_interval: int = 300
 

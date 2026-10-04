@@ -73,3 +73,56 @@ def test_dirty_tree_refused(vault):
 def test_tools_over_mcp_auth(client):
     r = client.post("/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
     assert r.status_code == 401
+
+
+class FakeEmbedder:
+    """Concept-based fake: words in the same group map to the same axis (simulates synonyms)."""
+
+    dim = 4
+    name = "fake"
+    groups = (("auto", "car", "fahrzeug"), ("tastatur", "keyboard"), ("backup", "sicherung"))
+
+    def _vec(self, text):
+        low = text.lower()
+        return [float(any(w in low for w in g)) + 0.01 for g in self.groups] + [0.01]
+
+    def embed_passages(self, texts):
+        return [self._vec(t) for t in texts]
+
+    def embed_query(self, text):
+        return self._vec(text)
+
+
+def test_semantic_hit_without_keyword_overlap(vault, tmp_path):
+    v = Vault(
+        vault.root, inbox_dir="00-Inbox", git_sync=False, db_path=tmp_path / "i.db", embedder=FakeEmbedder()
+    )
+    (vault.root / "Plan.md").write_text("# Plan\nNightly backup of the server\n")
+    hits = v.search("Sicherung")
+    assert hits[0]["path"] == "Plan.md"
+    assert hits[0]["matched_by"] == ["semantic"]
+    assert v.search("Tastatur")[0]["matched_by"] == ["keyword", "semantic"]
+
+
+def test_incremental_sync_and_model_change(vault, tmp_path):
+    db = tmp_path / "i.db"
+    v = Vault(vault.root, inbox_dir="00-Inbox", git_sync=False, db_path=db, embedder=FakeEmbedder())
+    assert v.sync_index()["indexed"] == 2
+    assert v.sync_index() == {"indexed": 0, "unchanged": 2, "removed": 0}
+    (vault.root / "Index.md").write_text("# Index\nnur noch Sicherung\n")
+    assert v.sync_index()["indexed"] == 1
+    assert v.search("backup")[0]["path"] == "Index.md"
+    (vault.root / "Index.md").unlink()
+    assert v.sync_index()["removed"] == 1
+    # reopening with another model rebuilds from scratch
+    other = FakeEmbedder()
+    other.name = "other"
+    v2 = Vault(vault.root, inbox_dir="00-Inbox", git_sync=False, db_path=db, embedder=other)
+    assert v2.sync_index()["indexed"] == 1
+
+
+def test_status_filter_and_chunks(vault):
+    rel = vault.add_note("Chunky", "# A\nalpha text\n## B\nbeta text\n")
+    hits = vault.search("beta", status="inbox")
+    assert hits[0]["path"] == rel and hits[0]["heading"].endswith("B")
+    assert not vault.search("beta", status="curated")
