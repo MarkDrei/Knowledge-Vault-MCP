@@ -1,0 +1,25 @@
+# Evaluation set for `kvault eval` (roadmap step 7).
+# Copy to eval/queries.yaml (git-ignored: it describes your private notes) and replace
+# the examples with 30–100 real questions you would ask, each with the note(s) that
+# answer it. Mix German and English, exact terms and paraphrases, and cross-language
+# questions (German question, English note and vice versa).
+#
+#   kvault eval eval/queries.yaml                                  # current model and index
+#   kvault eval eval/queries.yaml --model intfloat/multilingual-e5-base
+#   kvault eval eval/queries.yaml --model BAAI/bge-m3 --json
+
+- query: Wie sichere ich den VPS?            # paraphrase, no shared keywords
+  relevant: [Ops/Backup-Strategie.md]
+  lang: de
+- query: Datensicherung Aufbewahrung Snapshots
+  relevant: [Ops/Backup-Strategie.md]
+  lang: de
+- query: restic forget keep-daily            # exact command
+  relevant: [Tools/Restic.md]
+  lang: en
+- query: How long do we keep backups?        # English question, German note
+  relevant: [Ops/Backup-Strategie.md]
+  lang: en
+- query: reverse proxy
+  relevant: [Infra/VPS.md]
+  lang: en

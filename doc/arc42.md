@@ -48,7 +48,9 @@ Stakeholder: one owner, who is user, operator and developer.
 
 ```
 knowledge_vault_mcp/
-  cli.py          serve, hash-password, reindex, search
+  cli.py          serve, hash-password, reindex, search, eval, backup
+  evaluation.py   retrieval metrics per search mode, model benchmark in a separate index
+  backup.py       online backup of state.db
   config.py       Settings from env / .env
   server.py       assembles MCPServer, OAuth routes, /healthz, /login
   auth/           provider (OAuth AS), store (state DB), login page, passwords
@@ -89,7 +91,7 @@ VPS ── Caddy (TLS, :443) ──► kvault container/systemd unit (:8000)
                               └─ /data: state.db, index.db, vault/ (git clone), models/ (model cache)
 ```
 
-Backup: `state.db` (tokens, clients). `index.db` and `vault/` are rebuildable from the remote repo.
+Backup: `state.db` (tokens, clients) via `kvault backup`. `index.db`, `vault/` and `models/` are rebuildable from the remote repo and Hugging Face. Step-by-step setup (deploy key, Docker or systemd, proxy, cron backup, monitoring): [deployment.md](deployment.md).
 
 ## 8. Cross-cutting concepts
 
@@ -122,7 +124,8 @@ See [adr/](adr/):
 | Obsidian pushed a change to a note the server is editing | Push or rebase fails → operation aborted, error returned, local clone reset. |
 | `index.db` deleted | `kvault reindex` rebuilds it; no data loss. |
 | German query "Datensicherung" | Finds note titled "Backup-Strategie" (via vectors). |
-| Search on a 10k-note vault | p95 < 500 ms on 2 vCPU. |
+| Search on a 10k-note vault | p95 < 500 ms on 2 vCPU (measured by `kvault eval`, latency column). |
+| Evaluation set (German + English) | Hybrid recall@5 at least as good as each single mode; tracked with `kvault eval`. |
 
 ## 11. Risks and technical debt
 
@@ -130,6 +133,9 @@ See [adr/](adr/):
 - `sqlite-vec` is pre-1.0; brute-force KNN is fine at this size but the API may change.
 - DCR lets anyone register a client; tokens still require the owner password. Redirect URI allow-list limits phishing.
 - Single writer assumption: a second server instance on the same vault would conflict (aborts, no corruption).
+- The first start needs Hugging Face to download the model; the ONNX export paths of the custom-registered models are not under our control (ADR-0009).
+- PDF text quality depends on the text layer; scanned or multi-column PDFs index poorly (ADR-0010).
+- The full index on first start holds the vault lock, so write tools wait until it is done.
 
 ## 12. Glossary
 

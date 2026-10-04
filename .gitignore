@@ -12,3 +12,7 @@ data/
 *.db-journal
 *.db-wal
 *.db-shm
+
+# Private evaluation sets
+eval/*.yaml
+!eval/*.example.yaml
