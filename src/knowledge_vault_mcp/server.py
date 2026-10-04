@@ -17,6 +17,7 @@ from knowledge_vault_mcp.auth.store import StateStore
 from knowledge_vault_mcp.config import MCP_PATH, Settings
 from knowledge_vault_mcp.service import VaultService
 from knowledge_vault_mcp.tools import register_tools
+from knowledge_vault_mcp.webhook import GitHubWebhook
 
 INSTRUCTIONS = (
     "Knowledge Vault: a personal, git-backed knowledge base. "
@@ -71,6 +72,10 @@ def build_mcp(settings: Settings, store: StateStore, service: VaultService) -> M
     @mcp.custom_route("/healthz", methods=["GET"])
     async def healthz(request: Request) -> Response:
         return JSONResponse({"status": "ok", "version": __version__, "index_ready": service.ready})
+
+    mcp.custom_route("/webhook/github", methods=["POST"], include_in_schema=False)(
+        GitHubWebhook(service).handle
+    )
 
     login = LoginHandler(provider)
     mcp.custom_route("/login", methods=["GET"], include_in_schema=False)(login.get)

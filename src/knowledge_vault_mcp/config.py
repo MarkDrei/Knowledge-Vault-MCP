@@ -47,6 +47,8 @@ class Settings(BaseSettings):
     chunk_overlap: int = 150
     max_document_mb: int = 25  # larger PDF/DOCX/HTML files are skipped by the indexer
     sync_interval: int = 300  # seconds between `git pull` + incremental reindex; 0 disables
+    # Secret of the GitHub push webhook (POST /webhook/github); unset disables the endpoint.
+    github_webhook_secret: SecretStr | None = None
 
     @field_validator("public_url")
     @classmethod
@@ -58,7 +60,14 @@ class Settings(BaseSettings):
             raise ValueError("PUBLIC_URL must use https unless it is localhost")
         return v.rstrip("/")
 
-    @field_validator("auth_token", "owner_password_hash", "vault_repo_url", "vault_ssh_key", mode="before")
+    @field_validator(
+        "auth_token",
+        "owner_password_hash",
+        "vault_repo_url",
+        "vault_ssh_key",
+        "github_webhook_secret",
+        mode="before",
+    )
     @classmethod
     def _empty_is_none(cls, v: object) -> object:
         return None if v == "" else v
