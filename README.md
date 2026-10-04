@@ -217,6 +217,8 @@ A single small VPS (2-4 vCPU, 4-8 GB RAM, CPU only), vault size under ~10k notes
 
 ## Open questions
 
+Current to-do list (deployment, git sync, webhook, benchmark): [doc/open-items.md](doc/open-items.md).
+
 Decided: inbox notes are included in search by default; `include_inbox=false` excludes them. Sync is a GitHub push webhook plus polling as a fallback.
 
 
