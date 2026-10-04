@@ -183,6 +183,12 @@ class Indexer:
             return Document(note.title, note.frontmatter, note.tags, note.links, chunks)
         raise ValueError(f"unsupported file type: {path}")
 
+    def extract_text(self, path: str, data: bytes) -> str:
+        """Plain text of a file as the indexer sees it (Markdown is returned unchanged)."""
+        if is_markdown(path):
+            return data.decode("utf-8", errors="replace")
+        raise ValueError(f"unsupported file type: {path}")
+
     @staticmethod
     def _passage(doc: Document, chunk: Chunk) -> str:
         context = " > ".join([doc.title, *chunk.headings])

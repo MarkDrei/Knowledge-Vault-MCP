@@ -4,14 +4,11 @@ from typing import Annotated
 
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
-from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from knowledge_vault_mcp.retrieval.search import MAX_LIMIT, SearchFilters
 from knowledge_vault_mcp.service import VaultService
-from knowledge_vault_mcp.tools.common import iso_time, parse_time
-
-READ_ONLY = ToolAnnotations(readOnlyHint=True, openWorldHint=False)
+from knowledge_vault_mcp.tools.common import READ_ONLY, iso_time, parse_time
 
 
 def register(mcp: MCPServer, service: VaultService) -> None:

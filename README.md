@@ -2,7 +2,7 @@
 
 A self-hosted [MCP](https://modelcontextprotocol.io) server that exposes a git-backed, Obsidian-style knowledge vault for **hybrid retrieval (RAG)** and **safe capture of new knowledge**. It runs entirely locally on a small VPS.
 
-> Status: roadmap steps 1–3 (skeleton with OAuth, vault clone/sync and parsing, index and hybrid search) implemented. This README is the source of truth for scope; architecture and decisions are in [doc/arc42.md](doc/arc42.md) and [doc/adr/](doc/adr/).
+> Status: roadmap steps 1–4 (skeleton with OAuth, vault clone/sync and parsing, index and hybrid search, read tools) implemented. This README is the source of truth for scope; architecture and decisions are in [doc/arc42.md](doc/arc42.md) and [doc/adr/](doc/adr/).
 
 ## Goal
 
@@ -90,8 +90,9 @@ Embeddings are computed locally on CPU with a small **multilingual model** suite
 | Tool | Purpose |
 |---|---|
 | `search` | Hybrid search. Params: `query`, `limit`, optional `tags`, `path_prefix`, `status`, date filters. Returns ranked chunks with sources. |
-| `get_note` | Return a note's full content and metadata by path. |
-| `get_backlinks` | Return notes that link to a given note, with link context. |
+| `get_note` | Return a note's full content and metadata (frontmatter, tags, outgoing links with resolved paths, last modified, `sha` of the content). Accepts a vault path or a name as in a `[[wikilink]]`. |
+| `get_backlinks` | Return notes that link to a given note, with the line containing each link, heading and alias. |
+| `server_info` | Version and index status (notes, chunks, indexed commit, last sync, last error). |
 | `add_note` | Capture new knowledge into the inbox (see below). Commits and pushes. |
 | `update_note` / `append_note` / `move_note` / `delete_note` | Edit any existing note in the vault. Each is one commit, then push. `move_note` rewrites wikilinks in linking notes in the same commit. |
 
@@ -191,7 +192,7 @@ A single small VPS (2-4 vCPU, 4-8 GB RAM, CPU only), vault size under ~10k notes
 1. **Skeleton:** project layout, config, HTTP MCP server with OAuth, health check. *(done)*
 2. **Vault:** clone/sync, Markdown + frontmatter + wikilink parsing, SQLite schema. *(done)*
 3. **Index and search:** chunking, local embeddings, hybrid search with RRF, incremental reindex. *(done)*
-4. **Read tools:** `get_note`, `get_backlinks`.
+4. **Read tools:** `get_note`, `get_backlinks`. *(done)*
 5. **Write tools:** `add_note` with inbox naming/metadata, edit tools, pull-rebase-push flow.
 6. **Documents:** PDF/DOCX/HTML text extraction in the indexer.
 7. **Hardening:** deployment docs, backups, evaluation set for retrieval quality (German + English).

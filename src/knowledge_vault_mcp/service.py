@@ -11,6 +11,7 @@ from knowledge_vault_mcp.index.embedder import Embedder, make_embedder
 from knowledge_vault_mcp.index.indexer import Indexer, IndexStats
 from knowledge_vault_mcp.retrieval.search import Retriever
 from knowledge_vault_mcp.vault import GitError, Vault
+from knowledge_vault_mcp.vault.links import LinkResolver
 
 log = logging.getLogger(__name__)
 
@@ -29,6 +30,7 @@ class VaultService:
         self.last_sync: float | None = None
         self.last_error: str | None = None
         self.last_stats: IndexStats | None = None
+        self._resolver: tuple[str | None, LinkResolver] | None = None
 
     # ---- lifecycle ----
     def start(self) -> None:
@@ -76,6 +78,15 @@ class VaultService:
         self.last_sync = time.time()
         self.last_error = error
         return self.last_stats
+
+    def resolver(self) -> LinkResolver:
+        """Link resolver over all vault files, rebuilt whenever the indexed commit changes."""
+        key = self.db.get_meta("indexed_commit")
+        cached = self._resolver
+        if cached is None or cached[0] != key:
+            cached = (key, LinkResolver(self.vault.files()))
+            self._resolver = cached
+        return cached[1]
 
     def status(self) -> dict:
         return {
