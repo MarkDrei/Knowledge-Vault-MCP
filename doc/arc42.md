@@ -57,7 +57,7 @@ knowledge_vault_mcp/
   service.py      wires vault, index and retrieval; background sync thread
   index/          db (schema of index.db), chunker, embedder (fastembed/ONNX), indexer (incremental)
   retrieval/      search: BM25 + vector search, RRF, filters
-  tools/          MCP tools: search; (steps 4–5) get_note, get_backlinks, add/update/append/move/delete
+  tools/          MCP tools: search, get_note, get_backlinks; (step 5) add/update/append/move/delete
 ```
 
 | Block | Responsibility |

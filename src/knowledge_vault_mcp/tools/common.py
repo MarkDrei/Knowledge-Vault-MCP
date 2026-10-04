@@ -4,8 +4,11 @@ import datetime as dt
 from zoneinfo import ZoneInfo
 
 from mcp.server.mcpserver.exceptions import ToolError
+from mcp.types import ToolAnnotations
 
 from knowledge_vault_mcp.config import Settings
+
+READ_ONLY = ToolAnnotations(readOnlyHint=True, openWorldHint=False)
 
 
 def tz(settings: Settings) -> ZoneInfo:
