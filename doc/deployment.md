@@ -52,7 +52,8 @@ If a shared Traefik v3 already terminates TLS on the VPS, use `docker-compose.tr
 - Compose file rendered at `/var/lib/deployments/Knowledge-Vault-MCP/main/docker-compose.yml`, using the prebuilt image `knowledge-vault-mcp:prod-latest` (no `build:`). Redeploy after a `git pull`: `docker build -t knowledge-vault-mcp:prod-latest ~/clones/Knowledge-Vault-MCP && cd /var/lib/deployments/Knowledge-Vault-MCP/main && docker compose -p knowledge-vault-mcp__main up -d`. Traefik only routes once the health check is green; after a model change allow up to ~3 minutes.
 - The vault is bind-mounted read/write from `~/clones/Marks-Knowledge-Vault` to `/data/vault`. `state.db`, `index.db` and the model cache (`/data/models`) live in the `kvault-data` volume.
 - Inbox folder is `00-Inbox` (`INBOX_DIR`).
-- Git push from the container uses a dedicated deploy key in `/var/lib/deployments/Knowledge-Vault-MCP/main/ssh/` (mounted at `/ssh`, wired via `GIT_SSH_COMMAND` in `.env`). Add `ssh/id_ed25519.pub` as a deploy key **with write access** on `MarkDrei/Marks-Knowledge-Vault`, then set `VAULT_GIT_SYNC=true` and `docker compose up -d`. Until then writes are committed locally only (push manually from `~/clones/Marks-Knowledge-Vault`).
+- Git push from the container uses a dedicated deploy key in `/var/lib/deployments/Knowledge-Vault-MCP/main/ssh/` (mounted at `/ssh`, wired via `GIT_SSH_COMMAND` in `.env`). Add `ssh/id_ed25519.pub` as a deploy key **with write access** on `MarkDrei/Marks-Knowledge-Vault`, make sure the checkout's `origin` is the SSH URL (`git -C ~/clones/Marks-Knowledge-Vault remote -v` shows `git@github.com:...`), then set `VAULT_GIT_SYNC=true` and `docker compose up -d`. Until then writes are committed locally only (push manually from `~/clones/Marks-Knowledge-Vault`).
+- Push webhook: see §5a, payload URL `https://vault.ironstrike.de/webhook/github`.
 - The owner password hash is in the git-ignored `.env` next to that compose file; generate a new one with `docker compose -p knowledge-vault-mcp__main run --rm -it kvault kvault hash-password`.
 - Switching from the earlier `feat/hybrid-search` build: the settings names are the same (`MODEL_CACHE_PATH`, `VAULT_GIT_SYNC`, `EMBEDDINGS_ENABLED`); `index.db` is rebuilt automatically on the first start because its layout changed.
 
@@ -99,6 +100,16 @@ Keep `HOST=127.0.0.1` and put Caddy (or nginx) in front; `FORWARDED_ALLOW_IPS=12
 ## 5. Connect Claude
 
 *Settings → Connectors → Add custom connector*, URL `https://<your-domain>/mcp`, no client ID/secret. Approve on the `/login` page with the owner password. Check with the `server_info` tool; it shows the index status.
+
+## 5a. Push webhook (instant sync)
+
+Without a webhook, changes pushed from Obsidian reach the server within `SYNC_INTERVAL` (default 5 minutes). With it, a push to `VAULT_BRANCH` triggers the pull and reindex immediately.
+
+1. `openssl rand -hex 32` → set as `GITHUB_WEBHOOK_SECRET` in the server's `.env`, restart.
+2. In the **vault** repository on GitHub: *Settings → Webhooks → Add webhook*: payload URL `https://<your-domain>/webhook/github`, content type `application/json`, the same secret, *Just the push event*, active.
+3. GitHub sends a `ping`; the delivery log should show `200 {"ok": true}`. Later pushes answer `202 {"sync": "scheduled"}`; pushes to other branches are ignored.
+
+The endpoint verifies the HMAC-SHA256 signature (`X-Hub-Signature-256`) and ignores the payload except for the branch name, so a forged request can at most trigger an extra pull. Pulls need `VAULT_GIT_SYNC=true` and are skipped while tracked files in the checkout have uncommitted changes.
 
 ## 6. Backups and restore
 

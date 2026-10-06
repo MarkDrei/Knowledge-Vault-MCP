@@ -81,7 +81,7 @@ Embeddings are computed locally on CPU with a small **multilingual model** suite
 ### Sync and indexing
 
 - The server clones the vault repo on first start and builds the index in the background; the MCP endpoint is available immediately (search notes that the index is incomplete until the first run finishes).
-- Every `SYNC_INTERVAL` seconds a `git pull` triggers an **incremental** reindex: diff the indexed commit against the new HEAD, re-parse and re-embed only changed files, drop deleted ones. Files with an unchanged content hash are not re-embedded.
+- Every `SYNC_INTERVAL` seconds, and immediately on a GitHub push webhook (`POST /webhook/github`, HMAC-signed with `GITHUB_WEBHOOK_SECRET`, push to `VAULT_BRANCH` only), a `git pull` triggers an **incremental** reindex: diff the indexed commit against the new HEAD, re-parse and re-embed only changed files, drop deleted ones. Files with an unchanged content hash are not re-embedded.
 - A full rescan happens automatically on first start, after rewritten history and when `EMBEDDING_MODEL` changes. `kvault reindex [--full]` does the same from the command line; `kvault search "query"` queries the index for debugging.
 - Uncommitted files in the work tree (e.g. a bind-mounted checkout that is also edited on the host) are indexed as well; the periodic pull is skipped while tracked files have uncommitted changes.
 - If the embedding model cannot be loaded (or `EMBEDDINGS_ENABLED=false`), the server runs with keyword search only; `server_info` shows `semantic_search: false` and the reason.
@@ -163,7 +163,7 @@ Environment variables or a `.env` file (see [.env.example](.env.example)), no se
 - `STATE_DB_PATH` (OAuth state, back it up), `DB_PATH` (search index, rebuildable)
 - `VAULT_REPO_URL`, `VAULT_BRANCH`, `VAULT_PATH` (clone location), `VAULT_SSH_KEY` (deploy key for an SSH remote), `GIT_AUTHOR_NAME` / `GIT_AUTHOR_EMAIL` (identity of server commits). Without `VAULT_REPO_URL` the server uses an existing checkout at `VAULT_PATH` (e.g. bind-mounted) or creates a local repository there. `VAULT_GIT_SYNC` (default `true`): pull before and push after writes, pull periodically; `false` commits locally only.
 - `INBOX_DIR` (default `_inbox`; `00-Inbox` in the live vault), `TIMEZONE`
-- `DB_PATH`, `EMBEDDING_MODEL` (`hash` = no model, for tests only), `EMBEDDINGS_ENABLED` (default `true`; `false` = keyword search only), `MODEL_CACHE_PATH`, `CHUNK_MAX_CHARS`, `CHUNK_OVERLAP`, `MAX_DOCUMENT_MB`, `SYNC_INTERVAL` (seconds, `0` disables periodic sync)
+- `DB_PATH`, `EMBEDDING_MODEL` (`hash` = no model, for tests only), `EMBEDDINGS_ENABLED` (default `true`; `false` = keyword search only), `MODEL_CACHE_PATH`, `CHUNK_MAX_CHARS`, `CHUNK_OVERLAP`, `MAX_DOCUMENT_MB`, `SYNC_INTERVAL` (seconds, `0` disables periodic sync), `GITHUB_WEBHOOK_SECRET` (enables `POST /webhook/github`)
 
 ## Development
 
@@ -217,11 +217,12 @@ A single small VPS (2-4 vCPU, 4-8 GB RAM, CPU only), vault size under ~10k notes
 
 ## Open questions
 
-Decided: inbox notes are included in search by default; `include_inbox=false` excludes them.
+Current to-do list (deployment, git sync, webhook, benchmark): [doc/open-items.md](doc/open-items.md).
+
+Decided: inbox notes are included in search by default; `include_inbox=false` excludes them. Sync is a GitHub push webhook plus polling as a fallback.
 
 
 - Confirm the embedding model by benchmark (real notes, CPU latency and RAM): the tooling is in place (`kvault eval --model ...`, [deployment guide §8](doc/deployment.md#8-retrieval-evaluation-and-model-benchmark)); it needs an evaluation set written from the real vault.
-- Webhook vs. polling for sync; which git host will deliver webhooks. Polling (`SYNC_INTERVAL`) is implemented; a webhook endpoint can be added once the git host is decided.
 - Chunk size and overlap: defaults set (1500/150 characters), to be confirmed with the evaluation set.
 
 ## License

@@ -27,6 +27,7 @@ class VaultService:
         self.indexer = Indexer(settings, self.db, self.vault, self.embedder)
         self.retriever = Retriever(self.db, self.embedder, settings.inbox_dir)
         self._stop = threading.Event()
+        self._wake = threading.Event()  # set by request_sync(), e.g. from the GitHub webhook
         self._ready = threading.Event()
         self._thread: threading.Thread | None = None
         self.last_sync: float | None = None
@@ -43,6 +44,7 @@ class VaultService:
 
     def stop(self) -> None:
         self._stop.set()
+        self._wake.set()
         if self._thread:
             self._thread.join(timeout=10)
 
@@ -78,8 +80,16 @@ class VaultService:
         self.sync_and_index()
         self._ready.set()
         interval = self.settings.sync_interval
-        while interval > 0 and not self._stop.wait(interval):
+        while not self._stop.is_set():
+            self._wake.wait(interval if interval > 0 else None)
+            if self._stop.is_set():
+                break
+            self._wake.clear()
             self.sync_and_index()
+
+    def request_sync(self) -> None:
+        """Run a pull + reindex as soon as possible (coalesces with one already pending)."""
+        self._wake.set()
 
     def sync_and_index(self) -> IndexStats | None:
         """Pull from the remote, then bring the index up to date. Errors are logged, not raised."""
